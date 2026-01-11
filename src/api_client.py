@@ -8,9 +8,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import anthropic
+from dotenv import load_dotenv
+
+# Auto-load .env from project root
+_project_root = Path(__file__).parent.parent
+_env_file = _project_root / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
 
 from .cost_tracker import CostComponent, CostTracker, get_cost_tracker
 
