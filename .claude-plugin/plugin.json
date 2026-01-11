@@ -1,7 +1,7 @@
 {
   "name": "rlm-claude-code",
+  "description": "Recursive Language Model integration for Claude Code - intelligent multi-provider routing and unbounded context handling",
   "version": "0.1.0",
-  "description": "Recursive Language Model integration for Claude Code - unbounded context handling via intelligent model routing and REPL-based decomposition",
   "author": {
     "name": "Rand",
     "url": "https://github.com/rand"
@@ -14,21 +14,6 @@
     "recursive-language-model",
     "context-management",
     "smart-routing",
-    "multi-provider",
-    "openai",
-    "anthropic"
-  ],
-  "engines": {
-    "claude-code": ">=1.0.0"
-  },
-  "commands": "./commands/",
-  "agents": "./agents/",
-  "hooks": "./hooks/hooks.json",
-  "dependencies": {
-    "python": ">=3.11"
-  },
-  "setup": {
-    "install": "uv sync",
-    "postInstall": "scripts/set-api-key.sh --show"
-  }
+    "multi-provider"
+  ]
 }
