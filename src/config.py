@@ -96,12 +96,17 @@ class RLMConfig:
         with open(path) as f:
             data = json.load(f)
 
+        # Backward compatibility: migrate old field names
+        models_data = data.get("models", {})
+        if "root" in models_data and "root_model" not in models_data:
+            models_data["root_model"] = models_data.pop("root")
+
         return cls(
             activation=ActivationConfig(**data.get("activation", {})),
             depth=DepthConfig(**data.get("depth", {})),
             hybrid=HybridConfig(**data.get("hybrid", {})),
             trajectory=TrajectoryConfig(**data.get("trajectory", {})),
-            models=ModelConfig(**data.get("models", {})),
+            models=ModelConfig(**models_data),
             cost_controls=CostConfig(**data.get("cost_controls", {})),
         )
 

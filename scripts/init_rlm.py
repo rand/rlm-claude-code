@@ -43,9 +43,11 @@ def init_rlm():
                 "export_path": "~/.claude/rlm-trajectories/"
             },
             "models": {
-                "root": "claude-opus-4-5-20251101",
-                "recursive_depth_1": "claude-sonnet-4",
-                "recursive_depth_2": "claude-haiku-4-5-20251001"
+                "root_model": "opus",
+                "recursive_depth_1": "sonnet",
+                "recursive_depth_2": "haiku",
+                "openai_root": "gpt-5.2-codex",
+                "openai_recursive": "gpt-4o-mini"
             },
             "cost_controls": {
                 "max_recursive_calls_per_turn": 10,
