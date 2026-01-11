@@ -1,23 +1,34 @@
 {
   "name": "rlm-claude-code",
   "version": "0.1.0",
-  "description": "Recursive Language Model integration for Claude Code - unbounded context handling via REPL-based decomposition",
-  "author": "Rand",
+  "description": "Recursive Language Model integration for Claude Code - unbounded context handling via intelligent model routing and REPL-based decomposition",
+  "author": {
+    "name": "Rand",
+    "url": "https://github.com/heroku"
+  },
   "license": "MIT",
-  "claude_code_version": ">=1.0.0",
   "homepage": "https://github.com/heroku/rlm-claude-code",
   "repository": "https://github.com/heroku/rlm-claude-code",
   "keywords": [
     "rlm",
     "recursive-language-model",
     "context-management",
-    "constraint-programming",
-    "verification"
+    "smart-routing",
+    "multi-provider",
+    "openai",
+    "anthropic"
   ],
-  "capabilities": {
-    "agents": true,
-    "commands": true,
-    "skills": true,
-    "hooks": true
+  "engines": {
+    "claude-code": ">=1.0.0"
+  },
+  "commands": "./commands/",
+  "agents": "./agents/",
+  "hooks": "./hooks/hooks.json",
+  "dependencies": {
+    "python": ">=3.11"
+  },
+  "setup": {
+    "install": "uv sync",
+    "postInstall": "scripts/set-api-key.sh --show"
   }
 }
