@@ -4,11 +4,11 @@
   "description": "Recursive Language Model integration for Claude Code - unbounded context handling via intelligent model routing and REPL-based decomposition",
   "author": {
     "name": "Rand",
-    "url": "https://github.com/heroku"
+    "url": "https://github.com/rand"
   },
   "license": "MIT",
-  "homepage": "https://github.com/heroku/rlm-claude-code",
-  "repository": "https://github.com/heroku/rlm-claude-code",
+  "homepage": "https://github.com/rand/rlm-claude-code",
+  "repository": "https://github.com/rand/rlm-claude-code",
   "keywords": [
     "rlm",
     "recursive-language-model",

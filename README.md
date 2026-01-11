@@ -8,7 +8,7 @@ Transform Claude Code into a Recursive Language Model (RLM) agent with intellige
 
 ```bash
 # Clone the repository
-git clone https://github.com/heroku/rlm-claude-code.git
+git clone https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 
 # Install as a plugin
@@ -22,7 +22,7 @@ claude plugin install . --scope user
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/heroku/rlm-claude-code.git
+git clone https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 uv sync
 
