@@ -357,3 +357,135 @@ class TestRLMEnvironmentContextStats:
         result = basic_env.execute("doubled = injected * 2")
         assert result.success is True
         assert basic_env.locals["doubled"] == 84
+
+
+class TestDeferredOperations:
+    """Tests for deferred async operation handling."""
+
+    def test_recursive_query_returns_deferred_operation(self, basic_env):
+        """recursive_query returns a DeferredOperation, not a coroutine."""
+        from src.types import DeferredOperation
+
+        op = basic_env._recursive_query("What is this?", "some context")
+
+        assert isinstance(op, DeferredOperation)
+        assert op.operation_type == "recursive_query"
+        assert op.query == "What is this?"
+        assert "some context" in op.context
+
+    def test_summarize_returns_deferred_operation(self, basic_env):
+        """summarize returns a DeferredOperation, not a coroutine."""
+        from src.types import DeferredOperation
+
+        op = basic_env._summarize("Some long text to summarize")
+
+        assert isinstance(op, DeferredOperation)
+        assert op.operation_type == "summarize"
+        assert "Summarize" in op.query
+
+    def test_llm_batch_returns_deferred_batch(self, basic_env):
+        """llm_batch returns a DeferredBatch for parallel processing."""
+        from src.types import DeferredBatch
+
+        batch = basic_env._llm_batch([
+            ("Query 1", "context 1"),
+            ("Query 2", "context 2"),
+            ("Query 3", "context 3"),
+        ])
+
+        assert isinstance(batch, DeferredBatch)
+        assert len(batch.operations) == 3
+        assert batch.operations[0].query == "Query 1"
+        assert batch.operations[1].query == "Query 2"
+        assert batch.operations[2].query == "Query 3"
+
+    def test_has_pending_operations(self, basic_env):
+        """has_pending_operations correctly tracks pending ops."""
+        assert basic_env.has_pending_operations() is False
+
+        basic_env._recursive_query("test", "ctx")
+
+        assert basic_env.has_pending_operations() is True
+
+    def test_get_pending_operations(self, basic_env):
+        """get_pending_operations returns both individual ops and batches."""
+        basic_env._recursive_query("q1", "c1")
+        basic_env._summarize("text")
+        basic_env._llm_batch([("q2", "c2"), ("q3", "c3")])
+
+        ops, batches = basic_env.get_pending_operations()
+
+        assert len(ops) == 2  # recursive_query + summarize
+        assert len(batches) == 1
+        assert len(batches[0].operations) == 2
+
+    def test_resolve_operation(self, basic_env):
+        """resolve_operation injects result into working_memory."""
+        op = basic_env._recursive_query("test query", "context")
+
+        basic_env.resolve_operation(op.operation_id, "The answer is 42")
+
+        assert op.resolved is True
+        assert op.result == "The answer is 42"
+        assert basic_env.globals["working_memory"][op.operation_id] == "The answer is 42"
+
+    def test_resolve_batch(self, basic_env):
+        """resolve_batch resolves all operations in a batch."""
+        batch = basic_env._llm_batch([
+            ("Query 1", "ctx1"),
+            ("Query 2", "ctx2"),
+        ])
+
+        basic_env.resolve_batch(batch.batch_id, ["Answer 1", "Answer 2"])
+
+        assert batch.resolved is True
+        assert batch.results == ["Answer 1", "Answer 2"]
+        assert batch.operations[0].resolved is True
+        assert batch.operations[1].resolved is True
+        assert basic_env.globals["working_memory"][batch.batch_id] == ["Answer 1", "Answer 2"]
+
+    def test_clear_pending_operations(self, basic_env):
+        """clear_pending_operations removes all pending ops."""
+        basic_env._recursive_query("q1", "c1")
+        basic_env._llm_batch([("q2", "c2")])
+
+        assert basic_env.has_pending_operations() is True
+
+        basic_env.clear_pending_operations()
+
+        assert basic_env.has_pending_operations() is False
+
+    def test_deferred_operation_repr(self, basic_env):
+        """DeferredOperation has identifiable repr for output detection."""
+        op = basic_env._recursive_query("test", "ctx")
+
+        repr_str = repr(op)
+
+        assert "<<DEFERRED:" in repr_str
+        assert op.operation_id in repr_str
+
+    def test_operation_ids_are_unique(self, basic_env):
+        """Each operation gets a unique ID."""
+        op1 = basic_env._recursive_query("q1", "c1")
+        op2 = basic_env._recursive_query("q2", "c2")
+        op3 = basic_env._summarize("text")
+
+        ids = {op1.operation_id, op2.operation_id, op3.operation_id}
+
+        assert len(ids) == 3  # All unique
+
+    def test_llm_batch_available_in_repl(self, basic_env):
+        """llm_batch is accessible as a helper in REPL execution."""
+        assert "llm_batch" in basic_env.globals
+        assert callable(basic_env.globals["llm_batch"])
+
+    def test_recursive_query_via_repl_execution(self, basic_env):
+        """recursive_query can be called from REPL code."""
+        result = basic_env.execute("op = recursive_query('What is 2+2?', 'math context')")
+
+        assert result.success is True
+        assert basic_env.has_pending_operations() is True
+
+        ops, _ = basic_env.get_pending_operations()
+        assert len(ops) == 1
+        assert ops[0].query == "What is 2+2?"

@@ -149,6 +149,44 @@ class RecursiveCallResult:
 # Implements: Spec §Error Handling
 
 
+@dataclass
+class DeferredOperation:
+    """
+    Represents an async operation that needs to be processed after sync REPL execution.
+
+    Implements: Spec §4.2 Recursive Call Implementation (async/sync bridge)
+    """
+
+    operation_id: str
+    operation_type: str  # "recursive_query", "summarize", "llm_batch"
+    query: str
+    context: Any = None
+    spawn_repl: bool = False
+    resolved: bool = False
+    result: Any = None
+
+    def __repr__(self) -> str:
+        """Return placeholder string that can be detected in output."""
+        return f"<<DEFERRED:{self.operation_id}>>"
+
+
+@dataclass
+class DeferredBatch:
+    """
+    A batch of parallel LLM calls to be processed together.
+
+    Implements: Spec §4.2 Parallel Sub-Calls (llm_batch)
+    """
+
+    batch_id: str
+    operations: list[DeferredOperation] = field(default_factory=list)
+    resolved: bool = False
+    results: list[Any] = field(default_factory=list)
+
+    def __repr__(self) -> str:
+        return f"<<BATCH:{self.batch_id}>>"
+
+
 class RLMError(Exception):
     """Base class for RLM errors."""
 

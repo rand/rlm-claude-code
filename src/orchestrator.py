@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from .api_client import ClaudeClient, Provider, init_client
 from .complexity_classifier import should_activate_rlm
@@ -16,6 +17,7 @@ from .config import RLMConfig, default_config
 from .context_manager import externalize_context
 from .cost_tracker import CostComponent, get_cost_tracker
 from .prompts import build_rlm_system_prompt
+from .recursive_handler import RecursiveREPL
 from .repl_environment import RLMEnvironment
 from .response_parser import ResponseAction, ResponseParser
 from .smart_router import SmartRouter
@@ -25,7 +27,7 @@ from .trajectory import (
     TrajectoryEventType,
     TrajectoryRenderer,
 )
-from .types import SessionContext
+from .types import DeferredBatch, DeferredOperation, SessionContext
 
 
 @dataclass
@@ -153,15 +155,16 @@ class RLMOrchestrator:
         await trajectory.emit(start_event)
         yield start_event
 
-        # Initialize REPL environment
-        repl = RLMEnvironment(context)
+        # Initialize RecursiveREPL for depth management and cost tracking
+        recursive_handler = RecursiveREPL(
+            context=context,
+            depth=0,
+            config=self.config,
+            trajectory=trajectory,
+        )
 
-        # Set up recursive query function in REPL
-        async def recursive_query_wrapper(q: str, ctx: str) -> str:
-            return await client.recursive_query(q, ctx)
-
-        # Note: We can't directly use async in REPL, so recursive_query
-        # will need special handling in the loop
+        # Initialize REPL environment with recursive handler
+        repl = RLMEnvironment(context, recursive_handler=recursive_handler)
 
         # Analyze context
         externalized = externalize_context(context)
@@ -266,19 +269,32 @@ class RLMOrchestrator:
                     await trajectory.emit(exec_event)
                     yield exec_event
 
-                    # Check for recursive_query calls and handle them
-                    if "recursive_query(" in code or "recursive_llm(" in code:
-                        # Extract and execute recursive queries
-                        result = await self._handle_recursive_code(
-                            code, repl, client, state.depth, trajectory
-                        )
-                        for event in result.get("events", []):
+                    # Execute code synchronously - async ops become DeferredOperations
+                    exec_result = repl.execute(code)
+                    repl_result = exec_result.output if exec_result.success else f"Error: {exec_result.error}"
+
+                    # Process any deferred async operations
+                    if repl.has_pending_operations():
+                        async for event in self._process_deferred_operations(
+                            repl, client, state.depth, trajectory, recursive_handler
+                        ):
                             yield event
-                        repl_result = result.get("output", "")
-                    else:
-                        # Regular REPL execution
-                        exec_result = repl.execute(code)
-                        repl_result = exec_result.output if exec_result.success else f"Error: {exec_result.error}"
+
+                        # Re-run code now that results are available in working_memory
+                        # Or format output to show deferred results
+                        deferred_results = []
+                        ops, batches = repl.get_pending_operations()
+                        for op in ops:
+                            if op.resolved:
+                                deferred_results.append(f"{op.operation_id}: {str(op.result)[:200]}")
+                        for batch in batches:
+                            if batch.resolved:
+                                deferred_results.append(f"{batch.batch_id}: {len(batch.results)} results")
+
+                        if deferred_results:
+                            repl_result = f"{repl_result}\n\nAsync results:\n" + "\n".join(deferred_results)
+
+                        repl.clear_pending_operations()
 
                     # Emit REPL result event
                     result_event = TrajectoryEvent(
@@ -316,13 +332,29 @@ class RLMOrchestrator:
         else:
             final_content = "[Max turns reached without answer]"
 
+        # Emit cost report event
+        cost_tracker = get_cost_tracker()
+        cost_report = cost_tracker.format_report()
+        cost_metadata = cost_tracker.get_summary()
+        if recursive_handler:
+            cost_metadata["recursive_calls"] = recursive_handler.get_cost_summary()
+
+        cost_event = TrajectoryEvent(
+            type=TrajectoryEventType.COST_REPORT,
+            depth=0,
+            content=cost_report,
+            metadata=cost_metadata,
+        )
+        await trajectory.emit(cost_event)
+        yield cost_event
+
         final_event = TrajectoryEvent(
             type=TrajectoryEventType.FINAL,
             depth=0,
             content=final_content,
             metadata={
                 "turns": state.turn,
-                "cost": get_cost_tracker().get_summary(),
+                "cost": cost_metadata,
             },
         )
         await trajectory.emit(final_event)
@@ -339,93 +371,115 @@ class RLMOrchestrator:
             filename = f"trajectory_{int(time.time())}.json"
             trajectory.export_json(str(export_dir / filename))
 
-    async def _handle_recursive_code(
+    async def _process_deferred_operations(
         self,
-        code: str,
         repl: RLMEnvironment,
         client: ClaudeClient,
         depth: int,
         trajectory: StreamingTrajectory,
-    ) -> dict:
+        recursive_handler: RecursiveREPL | None = None,
+    ) -> AsyncIterator[TrajectoryEvent]:
         """
-        Handle code containing recursive_query calls.
+        Process deferred async operations from REPL execution.
 
-        This extracts recursive_query calls, executes them via API,
-        and substitutes results back into the code.
+        Implements: Spec §4.2 Recursive Call Implementation (async/sync bridge)
+
+        This handles:
+        - Individual recursive_query/summarize operations
+        - Parallel batch operations (llm_batch)
+
+        Uses RecursiveREPL when available for proper depth management and cost tracking.
         """
-        import re
+        ops, batches = repl.get_pending_operations()
 
-        events = []
-
-        # Pattern to match recursive_query calls
-        pattern = r'recursive_query\s*\(\s*["\'](.+?)["\']\s*,\s*(.+?)\s*\)'
-
-        matches = list(re.finditer(pattern, code))
-
-        if not matches:
-            # No recursive calls, execute normally
-            result = repl.execute(code)
-            return {"output": result.output if result.success else f"Error: {result.error}"}
-
-        # Process recursive calls
-        modified_code = code
-        for match in reversed(matches):  # Reverse to preserve positions
-            query = match.group(1)
-            context_expr = match.group(2)
-
+        # Process individual operations sequentially
+        for op in ops:
             # Emit recurse start event
             start_event = TrajectoryEvent(
                 type=TrajectoryEventType.RECURSE_START,
                 depth=depth + 1,
-                content=f"Query: {query[:100]}",
+                content=f"{op.operation_type}: {op.query[:100]}",
+                metadata={"operation_id": op.operation_id},
             )
             await trajectory.emit(start_event)
-            events.append(start_event)
+            yield start_event
 
-            # Evaluate context expression in REPL to get actual context
+            # Use RecursiveREPL if available for depth/cost tracking
             try:
-                ctx_result = repl.execute(f"__ctx__ = {context_expr}")
-                if ctx_result.success:
-                    context_value = repl.get_variable("__ctx__")
-                    context_str = str(context_value)[:8000]  # Limit context size
+                if recursive_handler:
+                    result = await recursive_handler.recursive_query(
+                        query=op.query,
+                        context=op.context,
+                        spawn_repl=op.spawn_repl,
+                    )
                 else:
-                    context_str = context_expr
-            except Exception:
-                context_str = context_expr
-
-            # Make recursive API call
-            try:
-                answer = await client.recursive_query(query, context_str)
+                    result = await client.recursive_query(op.query, op.context)
             except Exception as e:
-                answer = f"[Recursive query error: {e}]"
+                result = f"[Error: {e}]"
+
+            # Resolve the operation
+            repl.resolve_operation(op.operation_id, result)
 
             # Emit recurse end event
             end_event = TrajectoryEvent(
                 type=TrajectoryEventType.RECURSE_END,
                 depth=depth + 1,
-                content=answer[:200],
+                content=str(result)[:200],
+                metadata={"operation_id": op.operation_id},
             )
             await trajectory.emit(end_event)
-            events.append(end_event)
+            yield end_event
 
-            # Store result in working memory
-            var_name = f"_rq_result_{len(events)}"
-            repl.execute(f"working_memory['{var_name}'] = '''{answer}'''")
+        # Process batches in parallel
+        for batch in batches:
+            # Emit batch start event
+            batch_start = TrajectoryEvent(
+                type=TrajectoryEventType.RECURSE_START,
+                depth=depth + 1,
+                content=f"Parallel batch: {len(batch.operations)} queries",
+                metadata={"batch_id": batch.batch_id},
+            )
+            await trajectory.emit(batch_start)
+            yield batch_start
 
-            # Replace call with result reference
-            modified_code = (
-                modified_code[: match.start()]
-                + f"working_memory['{var_name}']"
-                + modified_code[match.end():]
+            # Execute all batch operations in parallel
+            async def execute_op(op: DeferredOperation) -> str:
+                try:
+                    if recursive_handler:
+                        return await recursive_handler.recursive_query(
+                            query=op.query,
+                            context=op.context,
+                            spawn_repl=op.spawn_repl,
+                        )
+                    else:
+                        return await client.recursive_query(op.query, op.context)
+                except Exception as e:
+                    return f"[Error: {e}]"
+
+            # Gather all results concurrently
+            results = await asyncio.gather(
+                *[execute_op(op) for op in batch.operations]
             )
 
-        # Execute modified code
-        result = repl.execute(modified_code)
+            # Resolve the batch
+            repl.resolve_batch(batch.batch_id, list(results))
 
-        return {
-            "events": events,
-            "output": result.output if result.success else f"Error: {result.error}",
-        }
+            # Emit batch end event with cost summary if using RecursiveREPL
+            metadata: dict[str, Any] = {
+                "batch_id": batch.batch_id,
+                "result_count": len(results),
+            }
+            if recursive_handler:
+                metadata["cost_summary"] = recursive_handler.get_cost_summary()
+
+            batch_end = TrajectoryEvent(
+                type=TrajectoryEventType.RECURSE_END,
+                depth=depth + 1,
+                content=f"Batch complete: {len(results)} results",
+                metadata=metadata,
+            )
+            await trajectory.emit(batch_end)
+            yield batch_end
 
 
 async def main():

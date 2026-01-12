@@ -46,11 +46,19 @@ class TokenUsage:
     model: str = ""
     component: CostComponent = CostComponent.ROOT_PROMPT
     timestamp: float = field(default_factory=time.time)
+    latency_ms: float = 0.0  # API call latency in milliseconds
 
     @property
     def total_tokens(self) -> int:
         """Total tokens used."""
         return self.input_tokens + self.output_tokens
+
+    @property
+    def tokens_per_second(self) -> float:
+        """Output tokens per second (throughput)."""
+        if self.latency_ms > 0:
+            return (self.output_tokens / self.latency_ms) * 1000
+        return 0.0
 
     def estimate_cost(self) -> float:
         """Estimate cost in dollars."""
@@ -141,6 +149,7 @@ class CostTracker:
         output_tokens: int,
         model: str,
         component: CostComponent,
+        latency_ms: float = 0.0,
     ) -> TokenUsage:
         """
         Record token usage.
@@ -150,6 +159,7 @@ class CostTracker:
             output_tokens: Number of output tokens
             model: Model used
             component: Which component used the tokens
+            latency_ms: API call latency in milliseconds
 
         Returns:
             TokenUsage record
@@ -159,6 +169,7 @@ class CostTracker:
             output_tokens=output_tokens,
             model=model,
             component=component,
+            latency_ms=latency_ms,
         )
         self._usage.append(usage)
 
@@ -346,6 +357,27 @@ class CostTracker:
         """Remaining dollar budget."""
         return max(0.0, self.budget_dollars - self.total_cost)
 
+    @property
+    def total_latency_ms(self) -> float:
+        """Total latency across all operations."""
+        return sum(u.latency_ms for u in self._usage)
+
+    @property
+    def average_latency_ms(self) -> float:
+        """Average latency per operation."""
+        if not self._usage:
+            return 0.0
+        return self.total_latency_ms / len(self._usage)
+
+    @property
+    def average_tokens_per_second(self) -> float:
+        """Average output throughput (tokens/second)."""
+        total_output = sum(u.output_tokens for u in self._usage)
+        total_time_s = self.total_latency_ms / 1000
+        if total_time_s > 0:
+            return total_output / total_time_s
+        return 0.0
+
     def get_breakdown_by_component(self) -> dict[str, dict[str, Any]]:
         """Get cost breakdown by component."""
         breakdown: dict[str, dict[str, Any]] = {}
@@ -388,6 +420,12 @@ class CostTracker:
             "remaining_budget": self.remaining_budget,
             "budget_tokens": self.budget_tokens,
             "budget_dollars": self.budget_dollars,
+            "latency": {
+                "total_ms": self.total_latency_ms,
+                "average_ms": self.average_latency_ms,
+                "throughput_tps": self.average_tokens_per_second,
+            },
+            "api_calls": len(self._usage),
             "by_component": self.get_breakdown_by_component(),
             "by_model": self.get_breakdown_by_model(),
             "alerts": [
@@ -399,6 +437,43 @@ class CostTracker:
                 for a in self._alerts
             ],
         }
+
+    def format_report(self) -> str:
+        """
+        Format a human-readable cost report.
+
+        Implements: Spec §8.1 Display cost report in trajectory stream
+        """
+        summary = self.get_summary()
+        lines = [
+            "╭─ Cost Report ───────────────────────────────────────╮",
+            f"│ Tokens: {summary['total_tokens']:,} / {summary['budget_tokens']:,} "
+            f"({summary['total_tokens'] / summary['budget_tokens'] * 100:.1f}%)",
+            f"│ Cost: ${summary['total_cost']:.4f} / ${summary['budget_dollars']:.2f}",
+            f"│ Latency: {summary['latency']['total_ms']:.0f}ms "
+            f"(avg {summary['latency']['average_ms']:.0f}ms/call)",
+            f"│ Throughput: {summary['latency']['throughput_tps']:.1f} tokens/sec",
+            f"│ API Calls: {summary['api_calls']}",
+        ]
+
+        # Add model breakdown
+        if summary["by_model"]:
+            lines.append("├─ By Model ──────────────────────────────────────────┤")
+            for model, data in summary["by_model"].items():
+                model_name = model.split("-")[1] if "-" in model else model
+                lines.append(
+                    f"│   {model_name}: {data['total_tokens']:,} tokens, ${data['cost']:.4f}"
+                )
+
+        # Add alerts
+        if summary["alerts"]:
+            lines.append("├─ Alerts ────────────────────────────────────────────┤")
+            for alert in summary["alerts"]:
+                icon = "⚠️" if alert["severity"] == "warning" else "🛑"
+                lines.append(f"│ {icon} {alert['message']}")
+
+        lines.append("╰─────────────────────────────────────────────────────╯")
+        return "\n".join(lines)
 
     def reset(self) -> None:
         """Reset all tracking."""

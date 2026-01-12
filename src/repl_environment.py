@@ -19,7 +19,7 @@ from RestrictedPython.Guards import (
     safer_getattr,
 )
 
-from .types import ExecutionResult, SessionContext
+from .types import DeferredBatch, DeferredOperation, ExecutionResult, SessionContext
 
 if TYPE_CHECKING:
     from .recursive_handler import RecursiveREPL
@@ -112,6 +112,8 @@ class RLMEnvironment:
             "summarize": self._summarize,
             "recursive_query": self._recursive_query,
             "recursive_llm": self._recursive_query,
+            "llm": self._recursive_query,  # Shorthand alias
+            "llm_batch": self._llm_batch,  # Parallel LLM calls
             # Safe subprocess execution
             "run_tool": self._run_tool,
             # Standard library (safe modules)
@@ -127,6 +129,11 @@ class RLMEnvironment:
 
         # Execution history for debugging
         self.history: list[dict[str, Any]] = []
+
+        # Pending async operations (deferred until after sync execution)
+        self.pending_operations: list[DeferredOperation] = []
+        self.pending_batches: list[DeferredBatch] = []
+        self._operation_counter = 0
 
     def _build_safe_builtins(self) -> dict[str, Any]:
         """
@@ -374,7 +381,7 @@ class RLMEnvironment:
 
         return results
 
-    async def _summarize(self, var: Any, max_tokens: int = 500) -> str:
+    def _summarize(self, var: Any, max_tokens: int = 500) -> DeferredOperation:
         """
         Summarize context variable via sub-call.
 
@@ -385,29 +392,31 @@ class RLMEnvironment:
             max_tokens: Max tokens for summary
 
         Returns:
-            Summary string
+            DeferredOperation that will be resolved by orchestrator
         """
-        if self.recursive_handler:
-            # Use recursive call for proper summarization
-            content = str(var)
-            if len(content) > max_tokens * 4:
-                content = content[: max_tokens * 4] + "..."
-            return await self.recursive_handler.recursive_query(
-                query=f"Summarize this content in {max_tokens} tokens or less",
-                context=content,
-                spawn_repl=False,
-            )
-        else:
-            # Fallback: simple truncation
-            content = str(var)[: max_tokens * 4]
-            return f"[Summary of {len(content)} chars: {content[:100]}...]"
+        self._operation_counter += 1
+        op_id = f"sum_{self._operation_counter}"
 
-    async def _recursive_query(
+        content = str(var)
+        if len(content) > max_tokens * 4:
+            content = content[: max_tokens * 4] + "..."
+
+        op = DeferredOperation(
+            operation_id=op_id,
+            operation_type="summarize",
+            query=f"Summarize this content in {max_tokens} tokens or less",
+            context=content,
+            spawn_repl=False,
+        )
+        self.pending_operations.append(op)
+        return op
+
+    def _recursive_query(
         self,
         query: str,
-        context: Any,
+        context: Any = None,
         spawn_repl: bool = False,
-    ) -> str:
+    ) -> DeferredOperation:
         """
         Spawn a recursive sub-query.
 
@@ -415,21 +424,135 @@ class RLMEnvironment:
 
         Args:
             query: Query string for sub-call
-            context: Context to pass to sub-call
+            context: Context to pass to sub-call (optional)
             spawn_repl: If True, child gets its own REPL
 
         Returns:
-            Sub-model's response
+            DeferredOperation that will be resolved by orchestrator
         """
-        if self.recursive_handler:
-            return await self.recursive_handler.recursive_query(
+        self._operation_counter += 1
+        op_id = f"rq_{self._operation_counter}"
+
+        # Convert context to string if not None
+        context_str = str(context)[:8000] if context is not None else ""
+
+        op = DeferredOperation(
+            operation_id=op_id,
+            operation_type="recursive_query",
+            query=query,
+            context=context_str,
+            spawn_repl=spawn_repl,
+        )
+        self.pending_operations.append(op)
+        return op
+
+    def _llm_batch(
+        self,
+        queries: list[tuple[str, Any]],
+        spawn_repl: bool = False,
+    ) -> DeferredBatch:
+        """
+        Execute multiple LLM queries in parallel.
+
+        Implements: Spec §4.2 Parallel Sub-Calls
+
+        Args:
+            queries: List of (query, context) tuples
+            spawn_repl: If True, each query gets its own REPL
+
+        Returns:
+            DeferredBatch that will be resolved by orchestrator
+
+        Example:
+            results = llm_batch([
+                ("Analyze auth module", auth_code),
+                ("Analyze db module", db_code),
+                ("Analyze api module", api_code),
+            ])
+        """
+        self._operation_counter += 1
+        batch_id = f"batch_{self._operation_counter}"
+
+        batch = DeferredBatch(batch_id=batch_id)
+
+        for query, context in queries:
+            self._operation_counter += 1
+            op_id = f"rq_{self._operation_counter}"
+            context_str = str(context)[:8000] if context is not None else ""
+
+            op = DeferredOperation(
+                operation_id=op_id,
+                operation_type="recursive_query",
                 query=query,
-                context=context,
+                context=context_str,
                 spawn_repl=spawn_repl,
             )
-        else:
-            # Fallback: placeholder response
-            return f"[Recursive query: {query[:50]}... on {type(context).__name__}]"
+            batch.operations.append(op)
+
+        self.pending_batches.append(batch)
+        return batch
+
+    def has_pending_operations(self) -> bool:
+        """Check if there are pending async operations to process."""
+        return bool(self.pending_operations) or bool(self.pending_batches)
+
+    def get_pending_operations(self) -> tuple[list[DeferredOperation], list[DeferredBatch]]:
+        """Get all pending operations for processing by orchestrator."""
+        ops = self.pending_operations.copy()
+        batches = self.pending_batches.copy()
+        return ops, batches
+
+    def clear_pending_operations(self) -> None:
+        """Clear pending operations after they've been processed."""
+        self.pending_operations.clear()
+        self.pending_batches.clear()
+
+    def resolve_operation(self, op_id: str, result: Any) -> None:
+        """
+        Resolve a pending operation with its result.
+
+        Args:
+            op_id: Operation ID to resolve
+            result: Result to inject
+        """
+        # Check individual operations
+        for op in self.pending_operations:
+            if op.operation_id == op_id:
+                op.resolved = True
+                op.result = result
+                # Inject into working memory for REPL access
+                self.globals["working_memory"][op_id] = result
+                return
+
+        # Check batch operations
+        for batch in self.pending_batches:
+            for op in batch.operations:
+                if op.operation_id == op_id:
+                    op.resolved = True
+                    op.result = result
+                    self.globals["working_memory"][op_id] = result
+                    return
+
+    def resolve_batch(self, batch_id: str, results: list[Any]) -> None:
+        """
+        Resolve a batch of operations with their results.
+
+        Args:
+            batch_id: Batch ID to resolve
+            results: List of results in order
+        """
+        for batch in self.pending_batches:
+            if batch.batch_id == batch_id:
+                batch.resolved = True
+                batch.results = results
+                # Resolve individual operations
+                for op, result in zip(batch.operations, results, strict=False):
+                    op.resolved = True
+                    op.result = result
+                    self.globals["working_memory"][op.operation_id] = result
+                # Also store full batch results
+                self.globals["working_memory"][batch_id] = results
+                return
 
     def _run_tool(
         self,

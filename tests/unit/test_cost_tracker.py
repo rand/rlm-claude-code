@@ -244,6 +244,164 @@ class TestCostTracker:
         assert tracker.total_cost == 0
 
 
+class TestLatencyTracking:
+    """Tests for latency tracking functionality."""
+
+    def test_token_usage_latency_field(self):
+        """TokenUsage has latency_ms field."""
+        usage = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+            latency_ms=1500.0,
+        )
+
+        assert usage.latency_ms == 1500.0
+
+    def test_tokens_per_second_calculation(self):
+        """Calculates tokens per second from latency."""
+        usage = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+            latency_ms=1000.0,  # 1 second
+        )
+
+        # 500 output tokens / 1 second = 500 tps
+        assert usage.tokens_per_second == 500.0
+
+    def test_tokens_per_second_zero_latency(self):
+        """Returns zero when latency is zero."""
+        usage = TokenUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            model="sonnet",
+            latency_ms=0.0,
+        )
+
+        assert usage.tokens_per_second == 0.0
+
+    def test_record_usage_with_latency(self):
+        """Can record usage with latency."""
+        tracker = CostTracker()
+
+        usage = tracker.record_usage(
+            input_tokens=1000,
+            output_tokens=500,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+            latency_ms=2000.0,
+        )
+
+        assert usage.latency_ms == 2000.0
+        assert tracker.total_latency_ms == 2000.0
+
+    def test_total_latency_ms(self):
+        """Tracks total latency across operations."""
+        tracker = CostTracker()
+
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=1500.0)
+        tracker.record_usage(500, 200, "haiku", CostComponent.RECURSIVE_CALL, latency_ms=800.0)
+
+        assert tracker.total_latency_ms == 2300.0
+
+    def test_average_latency_ms(self):
+        """Calculates average latency per operation."""
+        tracker = CostTracker()
+
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=1000.0)
+        tracker.record_usage(500, 200, "haiku", CostComponent.RECURSIVE_CALL, latency_ms=500.0)
+
+        assert tracker.average_latency_ms == 750.0
+
+    def test_average_latency_empty(self):
+        """Average latency is zero with no operations."""
+        tracker = CostTracker()
+
+        assert tracker.average_latency_ms == 0.0
+
+    def test_average_tokens_per_second(self):
+        """Calculates average throughput."""
+        tracker = CostTracker()
+
+        # 500 output tokens in 1000ms + 200 output tokens in 500ms = 700 tokens in 1.5s
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=1000.0)
+        tracker.record_usage(500, 200, "haiku", CostComponent.RECURSIVE_CALL, latency_ms=500.0)
+
+        # 700 tokens / 1.5 seconds ≈ 466.67 tps
+        assert abs(tracker.average_tokens_per_second - 466.67) < 1.0
+
+    def test_average_tokens_per_second_no_latency(self):
+        """Returns zero when total latency is zero."""
+        tracker = CostTracker()
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=0.0)
+
+        assert tracker.average_tokens_per_second == 0.0
+
+    def test_get_summary_includes_latency(self):
+        """Summary includes latency statistics."""
+        tracker = CostTracker()
+
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=1500.0)
+
+        summary = tracker.get_summary()
+
+        assert "latency" in summary
+        assert summary["latency"]["total_ms"] == 1500.0
+        assert summary["latency"]["average_ms"] == 1500.0
+        assert summary["latency"]["throughput_tps"] > 0
+
+
+class TestFormatReport:
+    """Tests for format_report method."""
+
+    def test_format_report_structure(self):
+        """Report has expected structure."""
+        tracker = CostTracker(budget_tokens=10_000, budget_dollars=1.0)
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT, latency_ms=500.0)
+
+        report = tracker.format_report()
+
+        assert "Cost Report" in report
+        assert "Tokens:" in report
+        assert "Cost:" in report
+        assert "Latency:" in report
+        assert "Throughput:" in report
+        assert "API Calls:" in report
+
+    def test_format_report_model_breakdown(self):
+        """Report includes model breakdown."""
+        tracker = CostTracker()
+        tracker.record_usage(1000, 500, "sonnet", CostComponent.ROOT_PROMPT)
+        tracker.record_usage(500, 200, "haiku", CostComponent.RECURSIVE_CALL)
+
+        report = tracker.format_report()
+
+        assert "By Model" in report
+        assert "sonnet" in report
+        assert "haiku" in report
+
+    def test_format_report_with_alerts(self):
+        """Report includes alerts when budget exceeded."""
+        tracker = CostTracker(budget_tokens=1000)
+        tracker.record_usage(1100, 0, "sonnet", CostComponent.ROOT_PROMPT)
+
+        report = tracker.format_report()
+
+        assert "Alerts" in report or "exceeded" in report
+
+    def test_format_report_empty_tracker(self):
+        """Report works with no usage recorded."""
+        tracker = CostTracker()
+
+        report = tracker.format_report()
+
+        assert "Cost Report" in report
+        assert "Tokens: 0" in report
+
+
 class TestEstimateTokens:
     """Tests for token estimation utilities."""
 
