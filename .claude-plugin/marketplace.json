@@ -1,5 +1,5 @@
 {
-  "name": "rlm-claude-code-marketplace",
+  "name": "rlm-claude-code",
   "description": "Marketplace for RLM-Claude-Code: Recursive Language Model with intelligent multi-provider routing",
   "owner": {
     "name": "rand",
@@ -10,7 +10,7 @@
       "name": "rlm-claude-code",
       "source": "./",
       "description": "Recursive Language Model integration for Claude Code - intelligent multi-provider routing and unbounded context handling",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
