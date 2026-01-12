@@ -1,6 +1,6 @@
 # RLM-Claude-Code
 
-Transform Claude Code into a Recursive Language Model (RLM) agent with intelligent orchestration, unbounded context handling, and REPL-based decomposition.
+Transform Claude Code into a Recursive Language Model (RLM) agent with intelligent orchestration, unbounded context handling, persistent memory, and REPL-based decomposition.
 
 ## What is RLM?
 
@@ -8,8 +8,9 @@ RLM (Recursive Language Model) enables Claude to handle arbitrarily large contex
 
 - **Peek** at context structure before deep analysis
 - **Search** using patterns to narrow focus
-- **Partition** large contexts and process in parallel
+- **Partition** large contexts and process in parallel via map-reduce
 - **Recurse** with sub-queries for verification
+- **Remember** facts and experiences across sessions
 
 This results in better accuracy on complex tasks while optimizing cost through intelligent model selection.
 
@@ -17,110 +18,268 @@ This results in better accuracy on complex tasks while optimizing cost through i
 
 ## Quick Start
 
-### Step 1: Install the Plugin
-
-```bash
-# Add the marketplace
-claude plugins add-marketplace https://github.com/rand/rlm-claude-code
-
-# Install the plugin
-claude plugins install rlm-claude-code --marketplace rlm-claude-code-marketplace
-```
-
-### Step 2: Verify Installation
-
-```bash
-# Check the plugin is installed
-claude plugins list | grep rlm
-
-# Start Claude Code - RLM initializes automatically
-claude
-```
-
-You should see "RLM initialized" when Claude Code starts.
-
-### Step 3: Test It Works
-
-In Claude Code, run:
-```
-/rlm status
-```
-
-You should see your current RLM configuration including mode, depth, and budget settings.
-
----
-
-## Installation Methods
-
-### Method 1: Marketplace (Recommended)
-
-The easiest way to install - gets automatic updates:
-
-```bash
-# Add the marketplace (one-time)
-claude plugins add-marketplace https://github.com/rand/rlm-claude-code
-
-# Install the plugin
-claude plugins install rlm-claude-code --marketplace rlm-claude-code-marketplace
-```
-
-### Method 2: Direct from GitHub
-
-Install directly from the repository:
-
 ```bash
 # Clone the repository
 git clone https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 
 # Install dependencies
-uv sync
-
-# Install as a local plugin
-claude plugins install . --scope user
-```
-
-### Method 3: Development Setup
-
-For contributors who want to modify the plugin:
-
-```bash
-# Clone and set up development environment
-git clone https://github.com/rand/rlm-claude-code.git
-cd rlm-claude-code
 uv sync --all-extras
 
 # Run tests to verify setup
 uv run pytest tests/ -v
+```
 
-# Install as editable plugin (changes reflect immediately)
-claude plugins install . --scope user --editable
+### As a Claude Code Plugin
+
+```bash
+# Install as a local plugin
+claude plugins install . --scope user
+```
+
+After installation, start Claude Code and you should see "RLM initialized" on startup.
+
+---
+
+## Architecture
+
+```
+User Query
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│              INTELLIGENT ORCHESTRATOR                    │
+│  ┌───────────────────┐   ┌───────────────────────────┐  │
+│  │ Complexity        │   │ Orchestration Decision    │  │
+│  │ Classifier        │   │ • Activate RLM?           │  │
+│  │ • Token count     │──►│ • Which model tier?       │  │
+│  │ • Cross-file refs │   │ • Depth budget (0-3)?     │  │
+│  │ • Query patterns  │   │ • Tool access level?      │  │
+│  └───────────────────┘   └───────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼ (if RLM activated)
+┌─────────────────────────────────────────────────────────┐
+│                 RLM EXECUTION ENGINE                     │
+│                                                          │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │  Context Manager │    │     REPL Sandbox         │   │
+│  │  • Externalize   │───►│  • peek(), search()      │   │
+│  │    conversation  │    │  • llm(), llm_batch()    │   │
+│  │  • files, tools  │    │  • map_reduce()          │   │
+│  └──────────────────┘    │  • find_relevant()       │   │
+│                          │  • memory_*() functions  │   │
+│                          └──────────────────────────┘   │
+│                                     │                    │
+│                                     ▼                    │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │ Recursive Handler│    │    Tool Bridge           │   │
+│  │ • Depth ≤ 3      │    │  • bash, read, grep      │   │
+│  │ • Model cascade  │    │  • Permission control    │   │
+│  │ • Sub-query spawn│    │  • Blocked commands      │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│                  PERSISTENCE LAYER                       │
+│                                                          │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │  Memory Store    │    │   Reasoning Traces       │   │
+│  │  • Facts, exps   │    │  • Goals, decisions      │   │
+│  │  • Hyperedges    │    │  • Options, outcomes     │   │
+│  │  • SQLite + WAL  │    │  • Decision trees        │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+│           │                         │                    │
+│           ▼                         ▼                    │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │ Memory Evolution │    │   Strategy Cache         │   │
+│  │ task → session   │    │  • Learn from success    │   │
+│  │ session → long   │    │  • Similarity matching   │   │
+│  │ decay → archive  │    │  • Suggest strategies    │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│                  BUDGET & TRAJECTORY                     │
+│  • Token tracking per component                          │
+│  • Cost limits with alerts                               │
+│  • Streaming trajectory output                           │
+│  • JSON export for analysis                              │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+Final Answer
 ```
 
 ---
 
-## Setup & Configuration
+## Core Components
 
-### API Keys (Optional)
+### REPL Environment
 
-RLM works with Claude Code's existing Anthropic API key. For multi-provider routing (OpenAI models), add additional keys:
+The REPL provides a sandboxed Python environment for context manipulation:
 
-```bash
-# Option 1: Use the setup script
-./scripts/set-api-key.sh
+**Context Variables:**
+- `conversation` - List of message dicts with role and content
+- `files` - Dict mapping filenames to content
+- `tool_outputs` - List of tool execution results
+- `working_memory` - Scratchpad for intermediate results
 
-# Option 2: Set environment variables
-export ANTHROPIC_API_KEY="your-key"
-export OPENAI_API_KEY="your-key"  # Optional, for GPT models
+**Helper Functions:**
 
-# Option 3: Create .env file
-echo "ANTHROPIC_API_KEY=your-key" >> ~/.claude/.env
-echo "OPENAI_API_KEY=your-key" >> ~/.claude/.env
+| Function | Description |
+|----------|-------------|
+| `peek(var, start, end)` | View a slice of any context variable |
+| `search(var, pattern, regex=False)` | Find patterns in context |
+| `summarize(var, max_tokens)` | LLM-powered summarization |
+| `llm(query, context, spawn_repl)` | Spawn recursive sub-query |
+| `llm_batch([(q1,c1), (q2,c2), ...])` | Parallel LLM calls |
+| `map_reduce(content, map_prompt, reduce_prompt, n_chunks)` | Partition and aggregate |
+| `find_relevant(content, query, top_k)` | Find most relevant sections |
+| `extract_functions(content)` | Parse function definitions |
+| `run_tool(cmd, args)` | Safe subprocess (ty, ruff only) |
+
+**Memory Functions** (when enabled):
+
+| Function | Description |
+|----------|-------------|
+| `memory_query(query, limit)` | Search stored knowledge |
+| `memory_add_fact(content, confidence)` | Store a fact |
+| `memory_add_experience(content, outcome, success)` | Store an experience |
+| `memory_get_context(limit)` | Retrieve relevant context |
+| `memory_relate(node1, node2, relation)` | Create relationships |
+
+### Memory System
+
+Persistent storage for cross-session learning:
+
+- **Node Types**: facts, experiences, procedures, goals
+- **Memory Tiers**: task → session → longterm → archive
+- **Hyperedges**: N-ary relationships with typed roles
+- **Storage**: SQLite with WAL mode for concurrent access
+
+```python
+from src import MemoryStore, MemoryEvolution
+
+# Create and use memory
+store = MemoryStore(db_path="~/.claude/rlm-memory.db")
+fact_id = store.create_node(
+    node_type="fact",
+    content="This project uses FastAPI",
+    confidence=0.9,
+)
+
+# Evolve memory through tiers
+evolution = MemoryEvolution(store)
+evolution.consolidate(task_id="current-task")  # task → session
+evolution.promote(session_id="current-session")  # session → longterm
+evolution.decay(days_threshold=30)  # longterm → archive
 ```
 
-### Configuration File
+### Reasoning Traces
 
-RLM creates a config at `~/.claude/rlm-config.json` on first run. Default settings:
+Track decision-making for transparency and debugging:
+
+```python
+from src import ReasoningTraces
+
+traces = ReasoningTraces(store)
+
+# Create goal and decision tree
+goal_id = traces.create_goal("Implement user authentication")
+decision_id = traces.create_decision(goal_id, "Choose auth strategy")
+
+# Track options considered
+jwt_option = traces.add_option(decision_id, "Use JWT tokens")
+session_option = traces.add_option(decision_id, "Use session cookies")
+
+# Record choice and reasoning
+traces.choose_option(decision_id, jwt_option)
+traces.reject_option(decision_id, session_option, "JWT better for API")
+
+# Get full decision tree
+tree = traces.get_decision_tree(goal_id)
+```
+
+### Budget Tracking
+
+Granular cost control with configurable limits:
+
+```python
+from src import EnhancedBudgetTracker, BudgetLimits
+
+tracker = EnhancedBudgetTracker()
+tracker.set_limits(BudgetLimits(
+    max_cost_per_task=5.0,
+    max_recursive_calls=10,
+    max_depth=3,
+))
+
+# Check before expensive operations
+allowed, reason = tracker.can_make_llm_call()
+if not allowed:
+    print(f"Budget exceeded: {reason}")
+
+# Get detailed metrics
+metrics = tracker.get_metrics()
+print(f"Cost: ${metrics.total_cost_usd:.2f}")
+print(f"Depth: {metrics.max_depth_reached}")
+print(f"Calls: {metrics.sub_call_count}")
+```
+
+---
+
+## Using RLM
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/rlm` | Show current status |
+| `/rlm on` | Enable RLM for this session |
+| `/rlm off` | Disable RLM mode |
+| `/rlm status` | Full configuration display |
+| `/rlm mode <fast\|balanced\|thorough>` | Set execution mode |
+| `/rlm depth <0-3>` | Set max recursion depth |
+| `/rlm budget $X` | Set session cost limit |
+| `/rlm model <opus\|sonnet\|haiku\|auto>` | Force model selection |
+| `/rlm tools <none\|repl\|read\|full>` | Set sub-LLM tool access |
+| `/rlm verbosity <minimal\|normal\|verbose\|debug>` | Set output detail |
+| `/rlm reset` | Reset to defaults |
+| `/rlm save` | Save preferences to disk |
+| `/simple` | Bypass RLM for current query |
+| `/trajectory <file>` | Analyze a trajectory file |
+| `/test` | Run test suite |
+| `/bench` | Run benchmarks |
+| `/code-review` | Review code changes |
+
+### Execution Modes
+
+| Mode | Depth | Model | Tools | Best For |
+|------|-------|-------|-------|----------|
+| `fast` | 1 | Haiku | REPL only | Quick questions, iteration |
+| `balanced` | 2 | Sonnet | Read-only | Most tasks (default) |
+| `thorough` | 3 | Opus | Full access | Complex debugging, architecture |
+
+### Auto-Activation
+
+RLM automatically activates when it detects:
+- **Large context**: >80K tokens in conversation
+- **Cross-file reasoning**: Questions spanning multiple files
+- **Complex debugging**: Stack traces, error analysis
+- **Architecture questions**: System design, refactoring patterns
+
+Force activation with `/rlm on` or bypass with `/simple`.
+
+---
+
+## Configuration
+
+### Config File
+
+RLM stores configuration at `~/.claude/rlm-config.json`:
 
 ```json
 {
@@ -139,388 +298,44 @@ RLM creates a config at `~/.claude/rlm-config.json` on first run. Default settin
 }
 ```
 
----
+### Environment Variables
 
-## Validating Your Installation
-
-### 1. Check Plugin Status
-
-```bash
-# List installed plugins
-claude plugins list
-
-# Should show:
-# rlm-claude-code@rlm-claude-code-marketplace (0.2.0)
-```
-
-### 2. Verify RLM Initialization
-
-Start Claude Code and look for the initialization message:
-
-```
-$ claude
-Created RLM config at /Users/you/.claude/rlm-config.json
-RLM initialized
-```
-
-### 3. Test Commands
-
-In Claude Code, test these commands:
-
-```
-/rlm status          # Shows current configuration
-/rlm mode balanced   # Sets execution mode
-/rlm depth 2         # Sets recursion depth
-```
-
-### 4. Run Plugin Tests (Optional)
-
-```bash
-# Navigate to plugin directory
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-
-# Install test dependencies and run tests
-uv sync --all-extras
-uv run pytest tests/ -v
-```
-
-Expected: 1000+ tests pass.
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Anthropic API access (uses Claude Code's key) |
+| `OPENAI_API_KEY` | OpenAI API access (optional, for GPT models) |
+| `RLM_CONFIG_PATH` | Custom config file location |
+| `RLM_DEBUG` | Enable debug logging |
 
 ---
 
-## Using RLM
+## Hooks
 
-### Basic Commands
+RLM integrates with Claude Code via hooks:
 
-| Command | Description |
-|---------|-------------|
-| `/rlm` | Show current status |
-| `/rlm on` | Enable auto-activation |
-| `/rlm off` | Disable RLM mode |
-| `/rlm status` | Full configuration display |
-| `/rlm reset` | Reset to defaults |
-
-### Execution Modes
-
-| Mode | Description | Best For |
-|------|-------------|----------|
-| `/rlm mode fast` | Quick, shallow analysis | Simple questions, fast iteration |
-| `/rlm mode balanced` | Standard processing (default) | Most tasks |
-| `/rlm mode thorough` | Deep analysis, multiple passes | Complex debugging, architecture |
-
-### Advanced Configuration
-
-```
-/rlm budget $5       # Set session cost limit
-/rlm depth 3         # Max recursion depth (0-3)
-/rlm model opus      # Force specific model
-/rlm tools full      # Full tool access for sub-LLMs
-/rlm verbosity debug # See internal reasoning
-```
-
-### When Does RLM Activate?
-
-RLM automatically activates when it detects:
-
-- **Large context**: >100K tokens in conversation
-- **Cross-file reasoning**: Questions spanning multiple files
-- **Complex debugging**: Stack traces, error analysis
-- **Architecture questions**: System design, refactoring
-
-You can also force activation with `/rlm on` or bypass with `/simple`.
+| Hook | Script | Purpose |
+|------|--------|---------|
+| `SessionStart` | `init_rlm.py` | Initialize RLM environment |
+| `UserPromptSubmit` | `check_complexity.py` | Decide if RLM should activate |
+| `PreToolUse` | `sync_context.py` | Sync tool context with RLM state |
+| `PostToolUse` | `capture_output.py` | Capture tool output for context |
+| `PreCompact` | `externalize_context.py` | Externalize before compaction |
+| `Stop` | `save_trajectory.py` | Save trajectory on session end |
 
 ---
 
-## Updating the Plugin
+## Development
 
-### Marketplace Installation (Automatic)
-
-```bash
-# Update marketplace index
-claude plugins update-marketplace rlm-claude-code-marketplace
-
-# Reinstall to get latest version
-claude plugins install rlm-claude-code --marketplace rlm-claude-code-marketplace --force
-```
-
-### Manual Update
+### Setup
 
 ```bash
-# Navigate to marketplace directory
-cd ~/.claude/plugins/marketplaces/rlm-claude-code-marketplace
-
-# Pull latest changes
-git pull origin main
-
-# Sync to cache (reinstall)
-rsync -av --delete ./ ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0/
-
-# Reinstall dependencies
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-uv sync --all-extras
-```
-
-### Development Installation
-
-If installed with `--editable`:
-
-```bash
-cd /path/to/rlm-claude-code
-git pull origin main
-uv sync
-# Changes apply immediately
-```
-
-### Check Current Version
-
-```bash
-# View installed version
-claude plugins list | grep rlm
-
-# Check for updates
-cd ~/.claude/plugins/marketplaces/rlm-claude-code-marketplace
-git fetch origin
-git log HEAD..origin/main --oneline
-```
-
----
-
-## Troubleshooting
-
-### Plugin Not Found
-
-```
-Error: Plugin 'rlm-claude-code' not found
-```
-
-**Solution**: Add the marketplace first:
-```bash
-claude plugins add-marketplace https://github.com/rand/rlm-claude-code
-```
-
-### RLM Not Initializing
-
-If you don't see "RLM initialized" on startup:
-
-1. Check plugin is installed: `claude plugins list`
-2. Check hooks are registered: `ls ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0/hooks/`
-3. Manually test init script:
-   ```bash
-   cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-   CLAUDE_PLUGIN_ROOT="$PWD" uv run python scripts/init_rlm.py
-   ```
-
-### Module Import Errors
-
-```
-ModuleNotFoundError: No module named 'openai'
-```
-
-**Solution**: Install dependencies:
-```bash
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-uv sync --all-extras
-```
-
-### Tests Failing
-
-```bash
-# Run with verbose output to diagnose
-uv run pytest tests/ -v --tb=long
-
-# Run specific test file
-uv run pytest tests/unit/test_auto_activation.py -v
-```
-
-### Reset Everything
-
-To completely reset RLM:
-
-```bash
-# Remove config
-rm ~/.claude/rlm-config.json
-
-# Uninstall plugin
-claude plugins uninstall rlm-claude-code
-
-# Reinstall fresh
-claude plugins install rlm-claude-code --marketplace rlm-claude-code-marketplace
-```
-
----
-
-## Architecture
-
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────┐
-│     Intelligent Orchestrator        │
-│  ┌─────────────────────────────┐   │
-│  │ Complexity Analysis         │   │
-│  │ • Token count               │   │
-│  │ • Cross-file references     │   │
-│  │ • Query patterns            │   │
-│  └─────────────────────────────┘   │
-│              │                      │
-│              ▼                      │
-│  ┌─────────────────────────────┐   │
-│  │ Orchestration Decision      │   │
-│  │ • Activate RLM?             │   │
-│  │ • Which model tier?         │   │
-│  │ • Depth budget?             │   │
-│  │ • Tool access level?        │   │
-│  └─────────────────────────────┘   │
-└─────────────────────────────────────┘
-    │
-    ▼ (if RLM activated)
-┌─────────────────────────────────────┐
-│         RLM Execution Engine        │
-│                                     │
-│  Context Manager ──► REPL Sandbox   │
-│        │                  │         │
-│        ▼                  ▼         │
-│  Externalized      Python helpers   │
-│  variables         peek/search/...  │
-│        │                  │         │
-│        └────────┬─────────┘         │
-│                 ▼                   │
-│        Recursive Handler            │
-│        (depth ≤ 2 sub-queries)      │
-└─────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────┐
-│       Strategy Learning             │
-│  • Track successful patterns        │
-│  • Suggest strategies for similar   │
-│    future queries                   │
-└─────────────────────────────────────┘
-    │
-    ▼
-Trajectory Stream → Final Answer
-```
-
----
-
-## Advanced Capabilities
-
-### Memory System (SPEC-02, SPEC-03)
-
-RLM includes a persistent memory system for cross-session learning:
-
-```python
-from src import MemoryStore, MemoryEvolution
-
-# Create memory store
-store = MemoryStore(db_path="~/.claude/rlm-memory.db")
-
-# Store facts and experiences
-fact_id = store.create_node(
-    node_type="fact",
-    content="This codebase uses SQLite for persistence",
-    confidence=0.9,
-)
-
-# Memory evolves: task → session → longterm
-evolution = MemoryEvolution(store)
-evolution.consolidate(task_id="current-task")
-evolution.promote(session_id="current-session")
-```
-
-### Reasoning Traces (SPEC-04)
-
-Track decision-making for transparency and debugging:
-
-```python
-from src import ReasoningTraces
-
-traces = ReasoningTraces(store)
-
-# Create goal and decisions
-goal_id = traces.create_goal("Implement user auth")
-decision_id = traces.create_decision(goal_id, "Choose auth strategy")
-
-# Track options and outcomes
-option_id = traces.add_option(decision_id, "Use JWT tokens")
-traces.choose_option(decision_id, option_id)
-
-# Get decision tree
-tree = traces.get_decision_tree(goal_id)
-```
-
-### Enhanced Budget Tracking (SPEC-05)
-
-Granular cost control with alerts:
-
-```python
-from src import EnhancedBudgetTracker, BudgetLimits
-
-tracker = EnhancedBudgetTracker()
-tracker.set_limits(BudgetLimits(
-    max_cost_per_task=5.0,
-    max_recursive_calls=10,
-))
-
-# Check before operations
-allowed, reason = tracker.can_make_llm_call()
-if not allowed:
-    print(f"Blocked: {reason}")
-
-# Get metrics
-metrics = tracker.get_metrics()
-print(f"Cost: ${metrics.total_cost_usd:.2f}")
-```
-
----
-
-## Slash Commands Reference
-
-| Command | Description |
-|---------|-------------|
-| `/rlm` | Toggle or configure RLM mode |
-| `/rlm status` | Show full configuration |
-| `/rlm on/off` | Enable/disable auto-activation |
-| `/rlm mode <fast\|balanced\|thorough>` | Set execution mode |
-| `/rlm budget $X` | Set session budget |
-| `/rlm depth N` | Set max recursion (0-3) |
-| `/rlm model <name>` | Force model (opus/sonnet/haiku/auto) |
-| `/rlm tools <level>` | Tool access (none/repl/read/full) |
-| `/rlm verbosity <level>` | Output detail (minimal/normal/verbose/debug) |
-| `/rlm reset` | Reset to defaults |
-| `/rlm save` | Save preferences to disk |
-| `/trajectory <file>` | Analyze trajectory file |
-| `/simple` | Bypass RLM for current query |
-| `/test` | Run test suite |
-| `/bench` | Run benchmarks |
-| `/code-review` | Review code changes |
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Getting Started Guide](./docs/getting-started.md) | Detailed setup walkthrough |
-| [User Guide](./docs/user-guide.md) | Complete usage documentation |
-| [Specification](./rlm-claude-code-spec.md) | Technical specification |
-| [Architecture Decisions](./docs/process/architecture.md) | ADRs and design rationale |
-| [Development Guide](./docs/process/README.md) | For contributors |
-
----
-
-## Contributing
-
-```bash
-# Clone repository
 git clone https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 
-# Install with dev dependencies
+# Install all dependencies
 uv sync --all-extras
 
-# Run tests
+# Run tests (1000+ tests)
 uv run pytest tests/ -v
 
 # Type check
@@ -531,7 +346,91 @@ uv run ruff check src/ --fix
 uv run ruff format src/
 ```
 
-See [docs/process/](./docs/process/) for development guidelines.
+### Project Structure
+
+```
+rlm-claude-code/
+├── src/
+│   ├── orchestrator.py           # Main RLM loop
+│   ├── intelligent_orchestrator.py  # Claude-powered decisions
+│   ├── auto_activation.py        # Complexity-based activation
+│   ├── context_manager.py        # Context externalization
+│   ├── repl_environment.py       # Sandboxed Python REPL
+│   ├── recursive_handler.py      # Sub-query management
+│   ├── memory_store.py           # Persistent memory (SQLite)
+│   ├── memory_evolution.py       # Memory tier management
+│   ├── reasoning_traces.py       # Decision tree tracking
+│   ├── enhanced_budget.py        # Cost tracking and limits
+│   ├── trajectory.py             # Event logging
+│   ├── trajectory_analysis.py    # Strategy extraction
+│   ├── strategy_cache.py         # Learn from success
+│   ├── tool_bridge.py            # Controlled tool access
+│   └── ...
+├── tests/
+│   ├── unit/                     # Unit tests
+│   ├── integration/              # Integration tests
+│   ├── property/                 # Hypothesis property tests
+│   └── security/                 # Security tests
+├── scripts/                      # Hook scripts
+├── hooks/                        # hooks.json
+├── commands/                     # Slash command definitions
+└── docs/                         # Documentation
+```
+
+### Test Categories
+
+```bash
+# Unit tests
+uv run pytest tests/unit/ -v
+
+# Integration tests
+uv run pytest tests/integration/ -v
+
+# Property-based tests
+uv run pytest tests/property/ -v -m hypothesis
+
+# Security tests
+uv run pytest tests/security/ -v
+
+# Benchmarks
+uv run pytest tests/benchmarks/ --benchmark-only
+```
+
+---
+
+## Troubleshooting
+
+### RLM Not Initializing
+
+1. Check plugin installation: `claude plugins list`
+2. Check hooks: `ls hooks/hooks.json`
+3. Test init script: `uv run python scripts/init_rlm.py`
+
+### Module Import Errors
+
+Install dependencies:
+```bash
+uv sync --all-extras
+```
+
+### Reset Everything
+
+```bash
+rm ~/.claude/rlm-config.json
+rm ~/.claude/rlm-memory.db
+```
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started](./docs/getting-started.md) | Installation and first steps |
+| [User Guide](./docs/user-guide.md) | Complete usage documentation |
+| [Specification](./rlm-claude-code-spec.md) | Technical specification |
+| [Architecture](./docs/process/architecture.md) | ADRs and design decisions |
+| [SPEC Overview](./docs/spec/00-overview.md) | Capability specifications |
 
 ---
 

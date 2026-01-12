@@ -5,13 +5,15 @@ Complete documentation for using RLM-Claude-Code effectively.
 ## Table of Contents
 
 - [Understanding RLM](#understanding-rlm)
-- [Slash Commands Reference](#slash-commands-reference)
+- [REPL Environment](#repl-environment)
+- [Slash Commands](#slash-commands)
 - [Execution Modes](#execution-modes)
 - [Auto-Activation](#auto-activation)
+- [Memory System](#memory-system)
+- [Reasoning Traces](#reasoning-traces)
 - [Budget Management](#budget-management)
-- [Trajectory Viewing](#trajectory-viewing)
+- [Trajectory Analysis](#trajectory-analysis)
 - [Strategy Learning](#strategy-learning)
-- [Multi-Provider Routing](#multi-provider-routing)
 - [Advanced Configuration](#advanced-configuration)
 - [Best Practices](#best-practices)
 
@@ -19,7 +21,7 @@ Complete documentation for using RLM-Claude-Code effectively.
 
 ## Understanding RLM
 
-### What Problem Does RLM Solve?
+### The Problem
 
 Large Language Models have context limits. Even with 200K token windows, Claude can struggle with:
 
@@ -27,188 +29,263 @@ Large Language Models have context limits. Even with 200K token windows, Claude 
 - **Cross-reference reasoning**: Connecting information across distant parts
 - **Systematic analysis**: Ensuring nothing is missed in large codebases
 
-### How RLM Works
+### The Solution
 
 RLM (Recursive Language Model) solves this by decomposition:
 
 1. **Context Externalization**: Large contexts become Python variables
 2. **REPL Environment**: Claude writes code to explore context programmatically
 3. **Recursive Sub-Queries**: Complex questions spawn focused sub-queries
-4. **Strategy Learning**: Successful patterns are remembered for similar tasks
+4. **Memory Persistence**: Facts and experiences persist across sessions
+5. **Strategy Learning**: Successful patterns are remembered for similar tasks
 
 ### Example Flow
 
 ```
-User: "Find all security vulnerabilities in the auth module"
+User: "Find security vulnerabilities in the auth module"
 
 RLM Analysis:
-├─ Detects: Cross-file reasoning needed
-├─ Externalizes: auth/*.py files as Python dict
-├─ REPL: Claude runs peek(files['auth/handler.py'][:500])
-├─ Sub-query: "Analyze input validation in handler.py"
-├─ Sub-query: "Check session management in session.py"
-└─ Aggregates: Combines findings into final response
+├─ Complexity classifier detects cross-file reasoning needed
+├─ Orchestrator chooses: depth=2, model=sonnet, tools=read_only
+├─ Context externalized: auth/*.py files as Python dict
+├─ REPL execution:
+│   ├─ peek(files['auth/handler.py'][:500])
+│   ├─ search(files, 'password', regex=False)
+│   └─ find_relevant(files['auth/session.py'], 'validation')
+├─ Sub-queries spawned:
+│   ├─ llm("Analyze input validation", files['handler.py'])
+│   └─ llm("Check session management", files['session.py'])
+├─ Results aggregated
+└─ Final response with findings
 ```
 
 ---
 
-## Slash Commands Reference
+## REPL Environment
+
+The REPL is a sandboxed Python environment for context manipulation.
+
+### Context Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `conversation` | `list[dict]` | Messages with `role` and `content` |
+| `files` | `dict[str, str]` | Filename → content mapping |
+| `tool_outputs` | `list[dict]` | Tool results with `tool` and `content` |
+| `working_memory` | `dict` | Scratchpad for intermediate results |
+
+### Helper Functions
+
+#### `peek(var, start=0, end=1000)`
+
+View a slice of any context variable.
+
+```python
+# First 500 chars of a file
+peek(files['main.py'], 0, 500)
+
+# Middle of conversation
+peek(conversation, 5, 10)
+
+# First 3 items of a dict
+peek(files, 0, 3)
+```
+
+#### `search(var, pattern, regex=False)`
+
+Find patterns in context. Returns list of matches with location info.
+
+```python
+# Find all authentication-related code
+search(files, 'authenticate')
+
+# Regex search for function definitions
+search(files['utils.py'], r'def \w+\(', regex=True)
+
+# Search conversation for error mentions
+search(conversation, 'error')
+```
+
+#### `summarize(var, max_tokens=500)`
+
+LLM-powered summarization via sub-call.
+
+```python
+# Summarize a large file
+summary = summarize(files['large_module.py'], max_tokens=200)
+```
+
+#### `llm(query, context=None, spawn_repl=False)`
+
+Spawn a recursive sub-query.
+
+```python
+# Simple sub-query
+result = llm("What does this function do?", files['auth.py'])
+
+# With REPL access for the sub-query
+result = llm("Analyze this module", files['complex.py'], spawn_repl=True)
+```
+
+#### `llm_batch(queries, spawn_repl=False)`
+
+Execute multiple LLM queries in parallel.
+
+```python
+# Analyze multiple modules concurrently
+results = llm_batch([
+    ("Analyze auth module", files['auth.py']),
+    ("Analyze db module", files['db.py']),
+    ("Analyze api module", files['api.py']),
+])
+```
+
+#### `map_reduce(content, map_prompt, reduce_prompt, n_chunks=4, model="auto")`
+
+Apply map-reduce pattern to large content.
+
+```python
+# Analyze large file by chunks
+result = map_reduce(
+    large_file_content,
+    map_prompt="Find potential bugs in this code chunk",
+    reduce_prompt="Combine these findings into a prioritized list",
+    n_chunks=4,
+    model="fast",
+)
+```
+
+#### `find_relevant(content, query, top_k=5, use_llm_scoring=False)`
+
+Find sections most relevant to a query.
+
+```python
+# Find authentication-related sections
+relevant = find_relevant(
+    files['large_module.py'],
+    query="password validation",
+    top_k=3,
+)
+# Returns: [(chunk, score), ...]
+```
+
+#### `extract_functions(content)`
+
+Parse and extract function definitions.
+
+```python
+# Get all functions from a file
+functions = extract_functions(files['utils.py'])
+# Returns: [{'name': 'foo', 'args': [...], 'body': '...', 'line': 42}, ...]
+```
+
+#### `run_tool(cmd, args=[])`
+
+Execute safe subprocess commands (limited to `ty`, `ruff`).
+
+```python
+# Type check a file
+result = run_tool("ty", ["check", "src/module.py"])
+
+# Lint a file
+result = run_tool("ruff", ["check", "src/module.py"])
+```
+
+### Memory Functions
+
+When memory is enabled, additional functions are available:
+
+#### `memory_query(query, limit=10)`
+
+Search stored knowledge.
+
+```python
+# Find facts about authentication
+results = memory_query("authentication patterns", limit=5)
+```
+
+#### `memory_add_fact(content, confidence=0.5)`
+
+Store a fact.
+
+```python
+# Remember a discovery
+memory_add_fact("This project uses JWT for auth", confidence=0.9)
+```
+
+#### `memory_add_experience(content, outcome, success)`
+
+Store an experience with outcome.
+
+```python
+# Record what worked
+memory_add_experience(
+    "Used map_reduce for large file analysis",
+    "Successfully identified 3 bugs",
+    success=True,
+)
+```
+
+#### `memory_get_context(limit=10)`
+
+Get recent/relevant context nodes.
+
+```python
+# Get context for current work
+context_nodes = memory_get_context(limit=5)
+```
+
+#### `memory_relate(node1_id, node2_id, relation)`
+
+Create relationships between nodes.
+
+```python
+# Link related facts
+memory_relate(fact1_id, fact2_id, "supports")
+```
+
+---
+
+## Slash Commands
 
 ### Core Commands
 
-#### `/rlm`
-
-Show current RLM status.
-
-```
-/rlm
-```
-
-Output:
-```
-RLM: enabled | Mode: balanced | Depth: 2
-```
-
-#### `/rlm status`
-
-Show detailed configuration.
-
-```
-/rlm status
-```
-
-Output:
-```
-RLM Configuration
-─────────────────
-Mode: balanced
-Auto-activate: enabled
-Max depth: 2
-Budget: $2.00
-Tool access: read_only
-Verbosity: normal
-Model preference: auto
-
-Session Statistics
-──────────────────
-Queries processed: 12
-RLM activations: 3
-Total cost: $0.47
-```
-
-#### `/rlm on` / `/rlm off`
-
-Enable or disable RLM auto-activation.
-
-```
-/rlm on   # Enable - RLM will activate for complex tasks
-/rlm off  # Disable - Use standard Claude Code
-```
+| Command | Description |
+|---------|-------------|
+| `/rlm` | Show current RLM status |
+| `/rlm on` | Enable RLM for this session |
+| `/rlm off` | Disable RLM mode |
+| `/rlm status` | Show detailed configuration |
 
 ### Mode Commands
 
-#### `/rlm mode <mode>`
-
-Set execution mode.
-
-```
-/rlm mode fast       # Quick, shallow analysis
-/rlm mode balanced   # Standard (default)
-/rlm mode thorough   # Deep, comprehensive analysis
-```
+| Command | Description |
+|---------|-------------|
+| `/rlm mode fast` | Quick, shallow analysis |
+| `/rlm mode balanced` | Standard processing (default) |
+| `/rlm mode thorough` | Deep, comprehensive analysis |
 
 ### Configuration Commands
 
-#### `/rlm depth <n>`
-
-Set maximum recursion depth (0-3).
-
-```
-/rlm depth 1   # Minimal recursion
-/rlm depth 2   # Standard (default)
-/rlm depth 3   # Deep recursion
-```
-
-#### `/rlm budget <amount>`
-
-Set session cost limit.
-
-```
-/rlm budget $5      # Set to $5
-/rlm budget $0.50   # Set to 50 cents
-/rlm budget         # Show current budget
-```
-
-#### `/rlm model <name>`
-
-Force a specific model.
-
-```
-/rlm model opus     # Force Claude Opus
-/rlm model sonnet   # Force Claude Sonnet
-/rlm model haiku    # Force Claude Haiku
-/rlm model gpt-4o   # Force GPT-4o (requires OpenAI key)
-/rlm model auto     # Automatic selection (default)
-```
-
-#### `/rlm tools <level>`
-
-Set tool access for sub-LLM queries.
-
-```
-/rlm tools none     # Pure reasoning only
-/rlm tools repl     # Python REPL only
-/rlm tools read     # REPL + file reading
-/rlm tools full     # Full tool access
-```
-
-#### `/rlm verbosity <level>`
-
-Set trajectory output detail.
-
-```
-/rlm verbosity minimal   # Only key events
-/rlm verbosity normal    # Standard detail (default)
-/rlm verbosity verbose   # Full content
-/rlm verbosity debug     # Everything + internal state
-```
-
-### Utility Commands
-
-#### `/rlm reset`
-
-Reset all settings to defaults.
-
-```
-/rlm reset
-```
-
-#### `/rlm save`
-
-Save current preferences to disk.
-
-```
-/rlm save
-```
+| Command | Description |
+|---------|-------------|
+| `/rlm depth <0-3>` | Set maximum recursion depth |
+| `/rlm budget $X` | Set session cost limit |
+| `/rlm model <name>` | Force model (opus/sonnet/haiku/auto) |
+| `/rlm tools <level>` | Tool access (none/repl/read/full) |
+| `/rlm verbosity <level>` | Output detail (minimal/normal/verbose/debug) |
+| `/rlm reset` | Reset all settings to defaults |
+| `/rlm save` | Save current preferences to disk |
 
 ### Other Commands
 
-#### `/simple`
-
-Bypass RLM for the current query only.
-
-```
-/simple
-What is this function doing?
-```
-
-#### `/trajectory <file>`
-
-Analyze a saved trajectory file.
-
-```
-/trajectory ~/.claude/trajectories/session-123.json
-```
+| Command | Description |
+|---------|-------------|
+| `/simple` | Bypass RLM for current query only |
+| `/trajectory <file>` | Analyze a saved trajectory file |
+| `/test` | Run the test suite |
+| `/bench` | Run performance benchmarks |
+| `/code-review` | Review code changes |
 
 ---
 
@@ -216,66 +293,45 @@ Analyze a saved trajectory file.
 
 ### Fast Mode
 
-**When to use**: Quick iterations, simple questions, cost-sensitive work.
-
-| Setting | Value |
-|---------|-------|
-| Depth | 1 |
-| Model | Haiku / GPT-4o-mini |
-| Tools | REPL only |
-| Budget | ~$0.50 |
-
 ```
 /rlm mode fast
 ```
 
-**Characteristics**:
-- Minimal recursion (single sub-query at most)
-- Fast, cheap models
-- Limited tool access
-- Best for: "What does X do?", "Fix this typo", "Quick summary"
-
-### Balanced Mode (Default)
-
-**When to use**: Most daily tasks, general development work.
-
 | Setting | Value |
 |---------|-------|
-| Depth | 2 |
-| Model | Sonnet / GPT-4o |
-| Tools | Read-only |
-| Budget | ~$2.00 |
+| Depth | 1 |
+| Model | Haiku |
+| Tools | REPL only |
+
+**Best for**: Quick questions, iteration, simple tasks.
+
+### Balanced Mode (Default)
 
 ```
 /rlm mode balanced
 ```
 
-**Characteristics**:
-- Standard recursion (verification sub-queries)
-- Capable models at reasonable cost
-- Can read files but not execute commands
-- Best for: Feature development, bug fixes, code review
-
-### Thorough Mode
-
-**When to use**: Critical decisions, complex debugging, architecture work.
-
 | Setting | Value |
 |---------|-------|
-| Depth | 3 |
-| Model | Opus / GPT-5 |
-| Tools | Full access |
-| Budget | ~$10.00 |
+| Depth | 2 |
+| Model | Sonnet |
+| Tools | Read-only |
+
+**Best for**: Most daily tasks, feature development, bug fixes.
+
+### Thorough Mode
 
 ```
 /rlm mode thorough
 ```
 
-**Characteristics**:
-- Deep recursion (multiple verification passes)
-- Most capable models
-- Full tool access including command execution
-- Best for: Security audits, system design, difficult bugs
+| Setting | Value |
+|---------|-------|
+| Depth | 3 |
+| Model | Opus |
+| Tools | Full access |
+
+**Best for**: Security audits, architecture decisions, complex debugging.
 
 ---
 
@@ -283,19 +339,17 @@ Analyze a saved trajectory file.
 
 ### How It Works
 
-RLM analyzes each query to decide whether to activate. Factors include:
+RLM analyzes each query to decide whether to activate:
 
-1. **Context Size**: Large contexts (>100K tokens) trigger activation
+1. **Context Size**: Large contexts (>80K tokens) trigger activation
 2. **Query Complexity**: Cross-file references, debugging keywords
-3. **Previous Turn**: Confusion or errors in previous response
+3. **Pattern Matching**: Architecture questions, comparison requests
 4. **User Preference**: Manual `/rlm on` overrides everything
 
 ### Complexity Signals
 
-RLM looks for these patterns:
-
-| Signal | Example |
-|--------|---------|
+| Signal | Examples |
+|--------|----------|
 | Cross-file reference | "How does auth.py interact with api.py?" |
 | Debugging keywords | "Why does this fail?", "trace the error" |
 | Architecture questions | "How should I structure this?" |
@@ -310,21 +364,134 @@ RLM looks for these patterns:
 /simple          # Skip activation for one query
 ```
 
-### Viewing Activation Decisions
+### Viewing Decisions
 
-With debug verbosity, you'll see why RLM activated:
-
+With debug verbosity:
 ```
 /rlm verbosity debug
 ```
 
-Output includes:
+You'll see activation reasoning:
 ```
 [ACTIVATION] Analyzing query...
   - Token count: 145,230 (above threshold)
   - Cross-file references: 3 detected
   - Complexity score: 0.87
-  - Decision: ACTIVATE (reason: large_context + cross_file)
+  - Decision: ACTIVATE
+```
+
+---
+
+## Memory System
+
+RLM includes a persistent memory system for cross-session learning.
+
+### Node Types
+
+| Type | Description |
+|------|-------------|
+| `fact` | Verified information about the codebase |
+| `experience` | Past actions and their outcomes |
+| `procedure` | Known working approaches |
+| `goal` | Tracked objectives |
+
+### Memory Tiers
+
+Memory evolves through tiers based on usage and confidence:
+
+```
+task → session → longterm → archive
+```
+
+| Tier | Lifespan | Purpose |
+|------|----------|---------|
+| `task` | Current task | Working memory |
+| `session` | Current session | Short-term recall |
+| `longterm` | Persistent | Core knowledge |
+| `archive` | Compressed | Historical reference |
+
+### Using Memory Programmatically
+
+```python
+from src import MemoryStore, MemoryEvolution
+
+# Create store
+store = MemoryStore(db_path="~/.claude/rlm-memory.db")
+
+# Store facts
+fact_id = store.create_node(
+    node_type="fact",
+    content="This project uses PostgreSQL 15",
+    tier="task",
+    confidence=0.9,
+)
+
+# Create relationships
+store.create_edge(
+    edge_type="relation",
+    label="uses",
+    members=[
+        {"node_id": project_id, "role": "subject", "position": 0},
+        {"node_id": fact_id, "role": "object", "position": 1},
+    ],
+)
+
+# Evolve memory
+evolution = MemoryEvolution(store)
+evolution.consolidate(task_id="current-task")  # task → session
+evolution.promote(session_id="session-1")  # session → longterm
+evolution.decay(days_threshold=30)  # old → archive
+```
+
+---
+
+## Reasoning Traces
+
+Track decision-making for transparency and debugging.
+
+### Creating Traces
+
+```python
+from src import ReasoningTraces
+
+traces = ReasoningTraces(store)
+
+# Create a goal
+goal_id = traces.create_goal(
+    content="Implement user authentication",
+    prompt="How should I implement user authentication?",
+    files=["src/auth.py", "src/models/user.py"],
+)
+
+# Create a decision point
+decision_id = traces.create_decision(
+    goal_id=goal_id,
+    content="Choose authentication strategy",
+)
+
+# Add options
+jwt_option = traces.add_option(decision_id, "Use JWT tokens")
+session_option = traces.add_option(decision_id, "Use session cookies")
+
+# Record the choice
+traces.choose_option(decision_id, jwt_option)
+traces.reject_option(decision_id, session_option, "JWT is more scalable for API")
+
+# Create action and outcome
+action_id = traces.create_action(decision_id, "Implementing JWT authentication")
+outcome_id = traces.create_outcome(action_id, "JWT auth implemented successfully", success=True)
+```
+
+### Querying Traces
+
+```python
+# Get full decision tree
+tree = traces.get_decision_tree(goal_id)
+
+# Get rejected options with reasons
+rejected = traces.get_rejected_options(decision_id)
+for opt in rejected:
+    print(f"Rejected: {opt.content} - {opt.reason}")
 ```
 
 ---
@@ -340,43 +507,79 @@ Output includes:
 
 ### How Budgets Work
 
-- Budgets are **per-session** (reset when Claude Code restarts)
-- RLM tracks estimated cost of each query
-- When budget is exceeded, RLM falls back to simpler strategies
+- Budgets are per-session (reset when Claude Code restarts)
+- RLM tracks estimated cost of each operation
+- When budget is exceeded, RLM uses simpler strategies
 - You're warned before exceeding budget
 
-### Cost Estimation
+### Programmatic Budget Control
 
-Approximate costs per query by mode:
+```python
+from src import EnhancedBudgetTracker, BudgetLimits
 
-| Mode | Typical Cost |
-|------|--------------|
-| Fast | $0.01 - $0.10 |
-| Balanced | $0.10 - $0.50 |
-| Thorough | $0.50 - $2.00 |
+tracker = EnhancedBudgetTracker()
 
-### Viewing Costs
+# Set limits
+tracker.set_limits(BudgetLimits(
+    max_cost_per_task=5.0,
+    max_recursive_calls=10,
+    max_depth=3,
+    max_repl_executions=50,
+))
 
+# Start tracking a task
+tracker.start_task("analyze-codebase")
+tracker.start_timing()
+
+# Check before operations
+allowed, reason = tracker.can_make_llm_call()
+if not allowed:
+    print(f"Blocked: {reason}")
+
+# Record operations
+tracker.record_llm_call(
+    input_tokens=1000,
+    output_tokens=500,
+    model="sonnet",
+    component=CostComponent.RECURSIVE_CALL,
+)
+tracker.record_repl_execution()
+tracker.record_depth(2)
+
+# Get metrics
+metrics = tracker.get_metrics()
+print(f"Cost: ${metrics.total_cost_usd:.2f}")
+print(f"Calls: {metrics.sub_call_count}")
+print(f"Max depth: {metrics.max_depth_reached}")
+
+# End task
+tracker.stop_timing()
+tracker.end_task()
 ```
-/rlm status
-```
 
-Shows:
-```
-Session Statistics
-──────────────────
-Total cost: $0.47
-Budget remaining: $1.53
+### Budget Alerts
+
+The tracker can trigger alerts:
+
+```python
+tracker.set_limits(BudgetLimits(
+    max_cost_per_task=5.0,
+    warn_at_cost=4.0,  # Warn at 80%
+))
+
+# Check for alerts
+alerts = tracker.get_alerts()
+for alert in alerts:
+    print(f"[{alert.level}] {alert.message}")
 ```
 
 ---
 
-## Trajectory Viewing
+## Trajectory Analysis
 
 ### What is a Trajectory?
 
-A trajectory is a record of RLM's reasoning process:
-
+A trajectory records RLM's reasoning process:
 - Queries and sub-queries
 - REPL code executed
 - Results at each step
@@ -384,69 +587,43 @@ A trajectory is a record of RLM's reasoning process:
 
 ### Verbosity Levels
 
-#### Minimal
-Shows only key events:
-```
-[RECURSE] Analyzing auth module
-[FINAL] Found 3 potential vulnerabilities
-```
-
-#### Normal (Default)
-Shows all events with truncated content:
-```
-[RECURSE] depth=0 → Analyzing auth module
-[REPL] peek(files['auth.py'][:200])
-[RESULT] "def authenticate(user, password):..."
-[FINAL] Found 3 potential vulnerabilities
-```
-
-#### Verbose
-Shows full content:
-```
-[RECURSE] depth=0 → Analyzing auth module
-[REPL] peek(files['auth.py'][:200])
-[RESULT] "def authenticate(user, password):\n    # WARNING: No rate limiting\n    if user in users and users[user] == password:\n        return create_session(user)\n    return None"
-[ANALYSIS] Identified: Missing rate limiting, plain text password comparison
-[FINAL] Found 3 potential vulnerabilities...
-```
-
-#### Debug
-Shows everything including internal state:
-```
-[ACTIVATION] complexity_score=0.87, signals={cross_file: true, large_context: true}
-[ORCHESTRATION] plan={depth: 2, model: sonnet, tools: read_only}
-[CONTEXT] externalized 5 files (23,456 tokens)
-[RECURSE] depth=0 → Analyzing auth module
-...
-```
-
-### Saving Trajectories
-
-Trajectories are automatically saved to `~/.claude/trajectories/`.
+| Level | Shows |
+|-------|-------|
+| `minimal` | RECURSE, FINAL, ERROR only |
+| `normal` | All events, truncated content |
+| `verbose` | All events, full content |
+| `debug` | Everything + internal state |
 
 ### Analyzing Trajectories
 
 ```
-/trajectory ~/.claude/trajectories/session-abc123.json
+/trajectory ~/.claude/trajectories/session-123.json
 ```
 
-Shows:
-- Timeline of events
-- Statistics (depth reached, tokens used, cost)
-- Strategy patterns detected
+Output:
+```
+Trajectory Analysis
+───────────────────
+Total events: 23
+Max depth reached: 2
+Recursive calls: 4
+REPL executions: 8
+Duration: 34.2s
+Estimated cost: $0.47
+
+Event Distribution:
+  ANALYZE: 3
+  REPL_EXEC: 8
+  RECURSE_START: 4
+  RECURSE_END: 4
+  FINAL: 1
+```
 
 ---
 
 ## Strategy Learning
 
-### How It Works
-
-RLM learns from successful trajectories:
-
-1. **Pattern Detection**: Identifies strategies used (peeking, grepping, etc.)
-2. **Feature Extraction**: Extracts query characteristics
-3. **Similarity Matching**: Matches new queries to past successes
-4. **Strategy Suggestion**: Suggests proven approaches
+RLM learns from successful trajectories.
 
 ### Strategy Types
 
@@ -458,66 +635,30 @@ RLM learns from successful trajectories:
 | Programmatic | One-shot code execution | Transformations, calculations |
 | Recursive | Spawn sub-queries | Verification, complex reasoning |
 
-### Viewing Learned Strategies
+### How Learning Works
 
-```
-/rlm verbosity debug
-```
+1. **Pattern Detection**: Identifies strategies used in successful trajectories
+2. **Feature Extraction**: Extracts query characteristics
+3. **Similarity Matching**: Matches new queries to past successes
+4. **Strategy Suggestion**: Suggests proven approaches
 
-When a strategy is suggested:
+### Viewing Strategy Suggestions
+
+With debug verbosity:
 ```
 [STRATEGY] Similar query found (similarity: 0.89)
   Previous: "Find all TODO comments in src/"
   Strategy: grepping (effectiveness: 0.94)
-  Suggesting: Use grep pattern search
+  Suggestion: Use search() with regex pattern
 ```
-
----
-
-## Multi-Provider Routing
-
-### Supported Providers
-
-| Provider | Models | Best For |
-|----------|--------|----------|
-| Anthropic | Opus, Sonnet, Haiku | General tasks, reasoning |
-| OpenAI | GPT-4o, GPT-4o-mini, Codex | Code generation, specific tasks |
-
-### Automatic Routing
-
-RLM automatically selects the best model based on:
-
-- **Query type**: Code tasks → Codex, reasoning → Opus
-- **Depth level**: Root → expensive, recursive → cheap
-- **Budget**: Respects cost constraints
-
-### Manual Model Selection
-
-```
-/rlm model opus      # Force Claude Opus
-/rlm model gpt-4o    # Force GPT-4o
-/rlm model auto      # Return to automatic
-```
-
-### Model Cascade
-
-Default model selection by depth:
-
-| Depth | Anthropic | OpenAI |
-|-------|-----------|--------|
-| 0 (root) | Opus | GPT-4o |
-| 1 | Sonnet | GPT-4o-mini |
-| 2 | Haiku | GPT-4o-mini |
 
 ---
 
 ## Advanced Configuration
 
-### Config File Location
+### Full Config File
 
-`~/.claude/rlm-config.json`
-
-### Full Configuration Options
+`~/.claude/rlm-config.json`:
 
 ```json
 {
@@ -535,8 +676,6 @@ Default model selection by depth:
     "root_model": "opus",
     "recursive_depth_1": "sonnet",
     "recursive_depth_2": "haiku",
-    "openai_root": "gpt-4o",
-    "openai_recursive": "gpt-4o-mini",
     "prefer_provider": "anthropic"
   },
   "trajectory": {
@@ -551,7 +690,7 @@ Default model selection by depth:
   },
   "tools": {
     "default_access": "read_only",
-    "blocked_commands": ["rm -rf", "sudo", "chmod 777"]
+    "blocked_commands": ["rm -rf", "sudo"]
   }
 }
 ```
@@ -576,7 +715,6 @@ The default balanced mode works well for most tasks. Only switch to thorough for
 ### 2. Use Budgets
 
 Set a reasonable budget to prevent unexpected costs:
-
 ```
 /rlm budget $2
 ```
@@ -584,7 +722,6 @@ Set a reasonable budget to prevent unexpected costs:
 ### 3. Review Trajectories for Complex Tasks
 
 For important decisions, check the trajectory to understand RLM's reasoning:
-
 ```
 /rlm verbosity verbose
 ```
@@ -592,20 +729,21 @@ For important decisions, check the trajectory to understand RLM's reasoning:
 ### 4. Use /simple for Quick Questions
 
 Don't waste RLM overhead on simple queries:
-
 ```
 /simple
 What's the syntax for a Python list comprehension?
 ```
 
-### 5. Let Auto-Activation Work
+### 5. Leverage Memory for Recurring Work
 
-Trust the complexity classifier. It's tuned to activate when beneficial.
+Store facts about your codebase to improve future sessions:
+```python
+memory_add_fact("This project uses FastAPI with SQLAlchemy", confidence=0.95)
+```
 
 ### 6. Provide Context in Queries
 
 Help RLM make better decisions:
-
 ```
 # Good - clear scope
 "Analyze the authentication flow in src/auth/"
@@ -616,8 +754,7 @@ Help RLM make better decisions:
 
 ### 7. Use Thorough Mode for Security
 
-For security-sensitive work, use thorough mode:
-
+For security-sensitive work:
 ```
 /rlm mode thorough
 Find security vulnerabilities in the payment processing code
@@ -625,54 +762,8 @@ Find security vulnerabilities in the payment processing code
 
 ---
 
-## Troubleshooting
-
-### RLM Activates Too Often
-
-```
-/rlm off  # Disable auto-activation
-```
-
-Or adjust the threshold in config:
-
-```json
-{
-  "activation": {
-    "complexity_threshold": 0.8  # Higher = less activation
-  }
-}
-```
-
-### RLM Never Activates
-
-Check if it's enabled:
-
-```
-/rlm status
-```
-
-Force activation:
-
-```
-/rlm on
-```
-
-### Costs Too High
-
-1. Use fast mode: `/rlm mode fast`
-2. Set budget: `/rlm budget $1`
-3. Reduce depth: `/rlm depth 1`
-
-### Slow Responses
-
-1. Use fast mode: `/rlm mode fast`
-2. Reduce verbosity: `/rlm verbosity minimal`
-3. Force cheaper model: `/rlm model haiku`
-
----
-
 ## Getting Help
 
 - **GitHub Issues**: [github.com/rand/rlm-claude-code/issues](https://github.com/rand/rlm-claude-code/issues)
-- **Documentation**: [docs/](./docs/)
+- **Getting Started**: [getting-started.md](./getting-started.md)
 - **Specification**: [rlm-claude-code-spec.md](../rlm-claude-code-spec.md)

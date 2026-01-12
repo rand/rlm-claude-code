@@ -1,410 +1,222 @@
 # Getting Started with RLM-Claude-Code
 
-This guide walks you through installing, configuring, and using RLM-Claude-Code step by step.
+This guide walks you through installing and using RLM-Claude-Code.
 
 ## Prerequisites
 
-Before installing RLM-Claude-Code, ensure you have:
-
-- **Claude Code** installed and working ([installation guide](https://docs.anthropic.com/en/docs/claude-code))
+- **Python 3.12+**
 - **uv** package manager ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **Python 3.12+** (uv will manage this for you)
-- **Git** for cloning repositories
+- **Claude Code** (optional, for plugin usage)
 
 Verify your setup:
 
 ```bash
-# Check Claude Code
-claude --version
-
-# Check uv
 uv --version
-
-# Check git
-git --version
+python --version
 ```
 
 ---
 
 ## Installation
 
-### Option A: Marketplace Installation (Recommended)
-
-This is the easiest method and enables automatic updates.
-
-#### Step 1: Add the Marketplace
+### Clone and Install
 
 ```bash
-claude plugins add-marketplace https://github.com/rand/rlm-claude-code
-```
-
-You should see:
-```
-Added marketplace 'rlm-claude-code-marketplace' from https://github.com/rand/rlm-claude-code
-```
-
-#### Step 2: Install the Plugin
-
-```bash
-claude plugins install rlm-claude-code --marketplace rlm-claude-code-marketplace
-```
-
-You should see:
-```
-Installing rlm-claude-code@0.2.0 from rlm-claude-code-marketplace...
-Successfully installed rlm-claude-code@0.2.0
-```
-
-#### Step 3: Install Dependencies
-
-The plugin needs Python dependencies installed:
-
-```bash
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-uv sync --all-extras
-```
-
-This installs all required packages including `anthropic`, `openai`, `pydantic`, etc.
-
-### Option B: Direct Installation
-
-If you prefer not to use marketplaces:
-
-```bash
-# Clone the repository
 git clone https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 
-# Install dependencies
+# Install all dependencies
 uv sync --all-extras
+```
 
-# Install as a plugin
-claude plugins install . --scope user
+### Verify Installation
+
+```bash
+# Run tests (should see 1000+ pass)
+uv run pytest tests/ -v --tb=short
+
+# Type check
+uv run ty check src/
 ```
 
 ---
 
-## Verification
+## As a Claude Code Plugin
 
-### Step 1: Check Plugin Installation
-
-```bash
-claude plugins list
-```
-
-Look for:
-```
-rlm-claude-code@rlm-claude-code-marketplace (0.2.0)
-```
-
-### Step 2: Start Claude Code
+If you want to use RLM with Claude Code:
 
 ```bash
-claude
+# From the rlm-claude-code directory
+claude plugins install . --scope user
 ```
 
-On startup, you should see:
-```
-Created RLM config at /Users/yourname/.claude/rlm-config.json
-RLM initialized
-```
-
-If this is not your first run, you'll just see:
+Start Claude Code and you should see:
 ```
 RLM initialized
 ```
 
-### Step 3: Test RLM Commands
-
-Inside Claude Code, run these commands:
-
+Test it works:
 ```
 /rlm status
 ```
 
-Expected output:
-```
-RLM Configuration
-─────────────────
-Mode: balanced
-Auto-activate: enabled
-Max depth: 2
-Budget: $2.00
-Tool access: read_only
-Verbosity: normal
-```
+---
 
-```
-/rlm
-```
+## First Steps
 
-Shows a brief status summary.
+### 1. Understand the REPL
 
-### Step 4: Run Tests (Optional)
+RLM provides a sandboxed Python environment with context variables and helper functions:
 
-For extra confidence, run the test suite:
+```python
+# Context is automatically available:
+conversation  # List of messages
+files         # Dict of filename → content
+tool_outputs  # List of tool results
+working_memory  # Scratchpad dict
 
-```bash
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-uv run pytest tests/unit/ tests/integration/ -v --tb=short
+# Helper functions:
+peek(files['main.py'], 0, 500)  # View first 500 chars
+search(files, 'def authenticate')  # Find patterns
+llm("Summarize this code", context=files['auth.py'])  # Sub-query
 ```
 
-Expected: 1000+ tests pass.
+### 2. Try the Slash Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/rlm` | Show current status |
+| `/rlm on` | Enable RLM mode |
+| `/rlm off` | Disable RLM mode |
+| `/rlm mode fast` | Quick mode (depth=1, Haiku) |
+| `/rlm mode thorough` | Deep mode (depth=3, Opus) |
+| `/simple` | Bypass RLM for one query |
+
+### 3. Understand Auto-Activation
+
+RLM automatically activates for complex tasks:
+- Large context (>80K tokens)
+- Cross-file questions
+- Debugging requests
+- Architecture discussions
+
+For simple questions, RLM stays off to avoid overhead.
 
 ---
 
 ## Configuration
 
-### Understanding the Config File
-
-RLM stores its configuration at `~/.claude/rlm-config.json`. Here's what each setting does:
+RLM stores settings at `~/.claude/rlm-config.json`:
 
 ```json
 {
   "activation": {
-    "mode": "complexity",          // How RLM decides to activate
-    "fallback_token_threshold": 80000  // Activate if tokens exceed this
+    "mode": "complexity",
+    "fallback_token_threshold": 80000
   },
   "depth": {
-    "default": 2,                  // Default recursion depth
-    "max": 3                       // Maximum allowed depth
+    "default": 2,
+    "max": 3
   },
   "trajectory": {
-    "verbosity": "normal",         // Output detail level
-    "streaming": true              // Show reasoning in real-time
+    "verbosity": "normal",
+    "streaming": true
   }
 }
 ```
 
-### Activation Modes
-
-| Mode | Description |
-|------|-------------|
-| `complexity` | Activate based on task complexity analysis (default) |
-| `always` | Always use RLM for every query |
-| `never` | Never auto-activate (manual only via `/rlm on`) |
-| `token_threshold` | Activate when context exceeds token threshold |
-
-### Editing Configuration
-
-You can edit the config file directly:
-
-```bash
-# Open in your editor
-code ~/.claude/rlm-config.json
-# or
-vim ~/.claude/rlm-config.json
-```
-
-Or use slash commands inside Claude Code:
-
-```
-/rlm mode thorough     # Change execution mode
-/rlm depth 3           # Change max depth
-/rlm save              # Save current settings
-```
-
----
-
-## API Keys
-
-### Using Claude Code's Key
-
-RLM automatically uses Claude Code's existing Anthropic API key. No additional setup required for basic usage.
-
-### Adding OpenAI Support (Optional)
-
-For multi-provider routing with GPT models:
-
-#### Option 1: Environment Variable
-
-```bash
-export OPENAI_API_KEY="sk-..."
-```
-
-Add to your shell profile (`~/.zshrc` or `~/.bashrc`) for persistence.
-
-#### Option 2: .env File
-
-Create `~/.claude/.env`:
-
-```
-OPENAI_API_KEY=sk-...
-```
-
-#### Option 3: Setup Script
-
-```bash
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-./scripts/set-api-key.sh openai sk-...
-```
-
----
-
-## Your First RLM Session
-
-Let's walk through a real example to see RLM in action.
-
-### Example 1: Simple Query (RLM Skipped)
-
-```
-You: What is 2 + 2?
-```
-
-RLM will skip activation because this is a simple query. You'll see normal Claude Code behavior.
-
-### Example 2: Complex Query (RLM Activates)
-
-```
-You: Analyze the authentication flow across all files in this project and identify potential security vulnerabilities.
-```
-
-If your project has multiple files, RLM will activate. You'll see:
-
-1. **Complexity analysis**: RLM detects cross-file reasoning required
-2. **Orchestration decision**: Chooses depth, model, and tool access
-3. **Context externalization**: Large contexts become REPL variables
-4. **Trajectory stream**: You see the reasoning unfold
-
-### Example 3: Force RLM Activation
-
-```
-/rlm on
-You: Explain this function.
-```
-
-With `/rlm on`, RLM activates regardless of complexity.
-
-### Example 4: Bypass RLM
-
-```
-/simple
-You: Explain this function.
-```
-
-The `/simple` command bypasses RLM for the current query.
-
----
-
-## Execution Modes Explained
-
-### Fast Mode
-
-```
-/rlm mode fast
-```
-
-- **Depth**: 1 (minimal recursion)
-- **Model**: Haiku/GPT-4o-mini (fast, cheap)
-- **Tools**: REPL only
-- **Budget**: ~$0.50
-- **Best for**: Quick questions, iteration, simple tasks
-
-### Balanced Mode (Default)
-
-```
-/rlm mode balanced
-```
-
-- **Depth**: 2 (standard recursion)
-- **Model**: Sonnet/GPT-4o
-- **Tools**: Read-only (can read files)
-- **Budget**: ~$2.00
-- **Best for**: Most tasks, daily use
-
-### Thorough Mode
-
+Edit directly or use slash commands:
 ```
 /rlm mode thorough
+/rlm depth 3
+/rlm save
 ```
 
-- **Depth**: 3 (deep recursion)
-- **Model**: Opus/GPT-5 (most capable)
-- **Tools**: Full access
-- **Budget**: ~$10.00
-- **Best for**: Complex debugging, architecture, critical decisions
+---
+
+## Core Concepts
+
+### Execution Modes
+
+| Mode | Depth | Model | Best For |
+|------|-------|-------|----------|
+| `fast` | 1 | Haiku | Quick questions |
+| `balanced` | 2 | Sonnet | Most tasks (default) |
+| `thorough` | 3 | Opus | Complex debugging |
+
+### Memory System
+
+RLM can persist knowledge across sessions:
+
+```python
+from src import MemoryStore, MemoryEvolution
+
+store = MemoryStore(db_path="~/.claude/rlm-memory.db")
+
+# Store facts
+store.create_node(
+    node_type="fact",
+    content="Project uses PostgreSQL",
+    confidence=0.9,
+)
+
+# Memory evolves: task → session → longterm
+evolution = MemoryEvolution(store)
+evolution.consolidate(task_id="task-1")
+evolution.promote(session_id="session-1")
+```
+
+### Budget Tracking
+
+Control costs with limits:
+
+```python
+from src import EnhancedBudgetTracker, BudgetLimits
+
+tracker = EnhancedBudgetTracker()
+tracker.set_limits(BudgetLimits(
+    max_cost_per_task=5.0,
+    max_recursive_calls=10,
+))
+```
+
+Or via slash command:
+```
+/rlm budget $5
+```
 
 ---
 
 ## Troubleshooting
 
-### "RLM initialized" Not Appearing
-
-1. **Check installation**:
-   ```bash
-   claude plugins list | grep rlm
-   ```
-
-2. **Check hooks**:
-   ```bash
-   ls ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0/hooks/
-   ```
-
-3. **Test manually**:
-   ```bash
-   cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
-   CLAUDE_PLUGIN_ROOT="$PWD" uv run python scripts/init_rlm.py
-   ```
-
-### Module Not Found Errors
-
-Install missing dependencies:
+### Tests Failing
 
 ```bash
-cd ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0
+# Check dependencies
 uv sync --all-extras
+
+# Run with verbose output
+uv run pytest tests/ -v --tb=long
 ```
 
-### /rlm Command Not Working
+### RLM Not Initializing (Plugin)
 
-1. Restart Claude Code
-2. Check the command exists:
-   ```bash
-   ls ~/.claude/plugins/cache/rlm-claude-code-marketplace/rlm-claude-code/0.1.0/.claude/commands/
-   ```
+1. Verify installation: `claude plugins list`
+2. Check hooks exist: `ls hooks/hooks.json`
+3. Test manually: `uv run python scripts/init_rlm.py`
 
-### Reset to Defaults
+### Reset Everything
 
 ```bash
-# Remove config
 rm ~/.claude/rlm-config.json
-
-# Restart Claude Code
-claude
+rm ~/.claude/rlm-memory.db
 ```
 
 ---
 
 ## Next Steps
 
-Now that RLM is installed:
-
-1. **Read the [User Guide](./user-guide.md)** for detailed usage instructions
-2. **Explore [Architecture Decisions](./process/architecture.md)** to understand how RLM works
-3. **Check the [Specification](../rlm-claude-code-spec.md)** for technical details
-4. **Join discussions** on [GitHub Issues](https://github.com/rand/rlm-claude-code/issues)
-
----
-
-## Quick Reference
-
-### Essential Commands
-
-| Command | What it does |
-|---------|--------------|
-| `/rlm` | Show status |
-| `/rlm on` | Enable RLM |
-| `/rlm off` | Disable RLM |
-| `/rlm mode fast` | Quick mode |
-| `/rlm mode thorough` | Deep mode |
-| `/rlm status` | Full config |
-| `/rlm reset` | Reset to defaults |
-| `/simple` | Bypass RLM once |
-
-### Key Paths
-
-| Path | Purpose |
-|------|---------|
-| `~/.claude/rlm-config.json` | Configuration file |
-| `~/.claude/plugins/cache/rlm-claude-code-marketplace/` | Installed plugin |
-| `~/.claude/plugins/marketplaces/rlm-claude-code-marketplace/` | Marketplace source |
+- [User Guide](./user-guide.md) - Complete usage documentation
+- [Architecture](./process/architecture.md) - Design decisions
+- [SPEC Overview](./spec/00-overview.md) - Capability specifications
+- [README](../README.md) - Quick reference

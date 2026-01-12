@@ -1,246 +1,241 @@
 # RLM-Claude-Code
 
-Transform Claude Code into a Recursive Language Model agent for unbounded context handling and improved reasoning.
+Transform Claude Code into a Recursive Language Model agent with intelligent orchestration, persistent memory, and REPL-based context decomposition.
 
 ## Quick Start
 
 ```bash
 # Setup
-uv sync
+uv sync --all-extras
+
+# Type check
 uv run ty check src/
 
-# Test
+# Test (1000+ tests)
 uv run pytest tests/ -v
 
-# Run RLM
-uv run python -m src.orchestrator --query "your query"
+# Install as plugin
+claude plugins install . --scope user
 ```
 
 ## Project Structure
 
 ```
 rlm-claude-code/
-├── CLAUDE.md                    # You are here
-├── rlm-claude-code-spec.md      # Specification (source of truth)
+├── CLAUDE.md                       # You are here
+├── README.md                       # User-facing documentation
+├── rlm-claude-code-spec.md         # Technical specification
 ├── docs/
-│   └── process/                 # Process documentation
-│       ├── README.md            # Process index
-│       ├── code-review.md       # Code review checklist
-│       ├── implementation.md    # Implementation workflow
-│       ├── testing.md           # Testing strategy
-│       ├── architecture.md      # Architecture decisions
-│       └── debugging.md         # Debugging workflow
+│   ├── getting-started.md          # Installation guide
+│   ├── user-guide.md               # Complete usage docs
+│   ├── spec/                       # Capability specifications
+│   │   ├── 00-overview.md          # SPEC index
+│   │   ├── 01-repl-functions.md    # Advanced REPL (SPEC-01)
+│   │   ├── 02-memory-foundation.md # Memory store (SPEC-02)
+│   │   ├── 03-memory-evolution.md  # Memory tiers (SPEC-03)
+│   │   ├── 04-reasoning-traces.md  # Decision tracking (SPEC-04)
+│   │   └── 05-budget-tracking.md   # Cost control (SPEC-05)
+│   └── process/
+│       ├── README.md               # Process index
+│       ├── architecture.md         # ADRs
+│       ├── implementation.md       # Implementation phases
+│       ├── code-review.md          # Review checklist
+│       ├── testing.md              # Testing strategy
+│       └── debugging.md            # Debug workflow
 ├── src/
-│   ├── __init__.py
-│   ├── types.py                 # Shared types
-│   ├── config.py                # Configuration
-│   ├── context_manager.py       # Context externalization
-│   ├── repl_environment.py      # Python REPL sandbox
-│   ├── recursive_handler.py     # Recursive call management
-│   ├── complexity_classifier.py # Activation logic
-│   ├── trajectory.py            # Trajectory events/rendering
-│   ├── router_integration.py    # Model routing
-│   └── orchestrator.py          # Main RLM loop
+│   ├── __init__.py                 # Public API exports
+│   ├── types.py                    # Core types
+│   ├── config.py                   # Configuration
+│   ├── orchestrator.py             # Main RLM loop
+│   ├── intelligent_orchestrator.py # Claude-powered decisions
+│   ├── auto_activation.py          # Complexity-based activation
+│   ├── context_manager.py          # Context externalization
+│   ├── repl_environment.py         # Sandboxed Python REPL
+│   ├── recursive_handler.py        # Sub-query management
+│   ├── memory_store.py             # SQLite memory (SPEC-02)
+│   ├── memory_evolution.py         # Memory tiers (SPEC-03)
+│   ├── reasoning_traces.py         # Decision trees (SPEC-04)
+│   ├── enhanced_budget.py          # Cost tracking (SPEC-05)
+│   ├── cost_tracker.py             # Token/cost accounting
+│   ├── trajectory.py               # Event logging
+│   ├── trajectory_analysis.py      # Strategy extraction
+│   ├── strategy_cache.py           # Learn from success
+│   ├── tool_bridge.py              # Controlled tool access
+│   ├── api_client.py               # LLM API wrapper
+│   ├── smart_router.py             # Model selection
+│   └── ...
 ├── tests/
-│   ├── unit/
-│   ├── integration/
-│   ├── property/
-│   ├── security/
-│   ├── benchmarks/
-│   └── fixtures/
-└── pyproject.toml
+│   ├── unit/                       # Unit tests
+│   ├── integration/                # Integration tests
+│   ├── property/                   # Hypothesis tests
+│   ├── security/                   # Security tests
+│   └── benchmarks/                 # Performance tests
+├── scripts/                        # Hook scripts
+├── hooks/                          # hooks.json
+└── commands/                       # Slash commands
 ```
 
 ## Essential Context
 
-**Read these files before making changes:**
+**Read before making changes:**
 
-1. `rlm-claude-code-spec.md` — Full specification
-2. `docs/process/implementation.md` — Current phase and file order
-3. `docs/process/code-review.md` — Review checklist
+1. `README.md` — Architecture and component overview
+2. `docs/spec/00-overview.md` — Capability specifications
+3. `docs/process/architecture.md` — Design decisions (ADRs)
 
 ## Development Commands
 
 ```bash
-# Type checking (must pass)
+# Type check (must pass)
 uv run ty check src/
 
-# Linting (must pass)
+# Lint (must pass)
 uv run ruff check src/ --fix
 uv run ruff format src/
 
-# Tests
+# All tests
 uv run pytest tests/ -v
-uv run pytest tests/ -v --cov=src/
 
-# Property tests
+# By category
+uv run pytest tests/unit/ -v
+uv run pytest tests/integration/ -v
 uv run pytest tests/property/ -v -m hypothesis
-
-# Benchmarks
+uv run pytest tests/security/ -v
 uv run pytest tests/benchmarks/ --benchmark-only
 
-# Interactive REPL testing
-uv run python -m src.repl_environment --interactive
+# With coverage
+uv run pytest tests/ -v --cov=src/ --cov-report=html
 ```
 
-## Key Technologies
-
-| Tool | Purpose | Docs |
-|------|---------|------|
-| uv | Package management | https://docs.astral.sh/uv/ |
-| ty | Type checking | https://docs.astral.sh/ty/ |
-| ruff | Linting/formatting | https://docs.astral.sh/ruff/ |
-| pydantic | Data validation | https://docs.pydantic.dev/ |
-| hypothesis | Property testing | https://hypothesis.readthedocs.io/ |
-| cpmpy | Constraint programming | https://cpmpy.readthedocs.io/ |
-| RestrictedPython | REPL sandbox | https://restrictedpython.readthedocs.io/ |
-
-## Architecture Summary
+## Architecture
 
 ```
 User Query
-    ↓
-Complexity Classifier (§6.3)
-    ↓ (if complex)
-RLM Orchestrator
-    ├── Context Manager → Externalize to Python vars
-    ├── REPL Environment → Execute peek/search/summarize
-    └── Recursive Handler → Spawn sub-queries (depth≤2)
-    ↓
-Trajectory Stream → User sees reasoning
-    ↓
-Claude Code Tools → bash/edit/read as normal
-    ↓
-Final Answer
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│         INTELLIGENT ORCHESTRATOR            │
+│  • Complexity classification                │
+│  • Model selection (Opus/Sonnet/Haiku)     │
+│  • Depth budget (0-3)                       │
+│  • Tool access level                        │
+└─────────────────────────────────────────────┘
+    │
+    ▼ (if RLM activated)
+┌─────────────────────────────────────────────┐
+│           RLM EXECUTION ENGINE              │
+│  ┌─────────────┐    ┌─────────────────┐    │
+│  │ Context Mgr │───►│ REPL Sandbox    │    │
+│  │ Externalize │    │ peek/search/llm │    │
+│  └─────────────┘    │ map_reduce      │    │
+│                     │ memory_*        │    │
+│  ┌─────────────┐    └─────────────────┘    │
+│  │ Recursive   │    ┌─────────────────┐    │
+│  │ Handler     │    │ Tool Bridge     │    │
+│  │ depth ≤ 3   │    │ bash/read/grep  │    │
+│  └─────────────┘    └─────────────────┘    │
+└─────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│            PERSISTENCE LAYER                │
+│  Memory Store ─────► Memory Evolution       │
+│  (SQLite+WAL)        (task→session→long)   │
+│  Reasoning Traces ──► Strategy Cache        │
+│  (decision trees)     (learn from success)  │
+└─────────────────────────────────────────────┘
+    │
+    ▼
+Budget Tracking → Trajectory → Final Answer
 ```
 
-## Implementation Phases
+## Implementation Status
+
+All phases complete:
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 1 | Core Infrastructure | Not Started |
-| 2 | Claude Code Integration | Not Started |
-| 3 | Optimization | Not Started |
-| 4 | Advanced Features | Not Started |
+| 1 | Core Infrastructure | Complete |
+| 2 | Claude Code Integration | Complete |
+| 3 | Optimization | Complete |
+| 4 | Advanced Features | Complete |
+| 5 | Intelligent Orchestration | Complete |
 
-See `docs/process/implementation.md` for details.
+SPEC implementations:
 
-## Spec Traceability
+| Spec | Component | Status |
+|------|-----------|--------|
+| SPEC-01 | Advanced REPL Functions | Complete |
+| SPEC-02 | Memory Foundation | Complete |
+| SPEC-03 | Memory Evolution | Complete |
+| SPEC-04 | Reasoning Traces | Complete |
+| SPEC-05 | Enhanced Budget Tracking | Complete |
 
-Every implementation must reference the spec:
+## Key Technologies
 
-```python
-def should_activate_rlm(prompt: str, context: SessionContext) -> tuple[bool, str]:
-    """
-    Determine if RLM mode should activate.
-    
-    Implements: Spec §6.3 Task Complexity-Based Activation
-    """
-```
+| Tool | Purpose |
+|------|---------|
+| uv | Package management |
+| ty | Type checking |
+| ruff | Linting/formatting |
+| pydantic | Data validation |
+| hypothesis | Property testing |
+| RestrictedPython | REPL sandbox |
+| SQLite | Memory persistence |
+
+## REPL Helper Functions
+
+| Function | Purpose |
+|----------|---------|
+| `peek(var, start, end)` | View slice of context |
+| `search(var, pattern, regex)` | Find patterns |
+| `summarize(var, max_tokens)` | LLM summarization |
+| `llm(query, context)` | Recursive sub-query |
+| `llm_batch(queries)` | Parallel sub-queries |
+| `map_reduce(content, map_p, reduce_p)` | Partition+aggregate |
+| `find_relevant(content, query, top_k)` | Relevance search |
+| `extract_functions(content)` | Parse functions |
+| `memory_query(query)` | Search memory |
+| `memory_add_fact(content, conf)` | Store fact |
+| `memory_add_experience(...)` | Store experience |
 
 ## Code Style
 
-- Type annotations on all public functions (validated by `ty`)
-- Google-style docstrings
+- Type annotations on all public functions
+- Google-style docstrings with spec references
 - No functions >50 lines
-- No `# type: ignore` without justification
 - Pydantic models at API boundaries
 
 ## Testing Requirements
 
-- Unit tests for all new functions
+- Unit tests for all functions
 - Property tests for data transformations
 - Security tests for REPL operations
-- Trajectory snapshot tests for behavior changes
-- Benchmarks for performance-critical paths
+- Integration tests for component interactions
+- 1000+ tests total
 
 ## Before Committing
 
 1. `uv run ty check src/` — Must pass
 2. `uv run ruff check src/` — Must pass
 3. `uv run pytest tests/ -v` — Must pass
-4. Run `/code-review` command
-5. Update trajectory snapshots if behavior changed
-
-## Debugging
-
-When something breaks:
-
-1. **Capture trajectory first**: `--verbosity debug --export-trajectory`
-2. See `docs/process/debugging.md` for workflow
-3. Never guess without trajectory data
-
-## Common Patterns
-
-### Adding a REPL Helper
-
-```python
-# In repl_environment.py
-class RLMEnvironment:
-    def __init__(self, context: SessionContext):
-        self.globals = {
-            # ... existing ...
-            'new_helper': self._new_helper,
-        }
-    
-    def _new_helper(self, arg: str) -> str:
-        """
-        New helper function.
-        
-        Implements: Spec §4.X
-        """
-        # Implementation
-```
-
-### Adding a Complexity Signal
-
-```python
-# In complexity_classifier.py
-@dataclass
-class TaskComplexitySignals:
-    # ... existing ...
-    new_signal: bool  # Add field
-    
-def extract_complexity_signals(...) -> TaskComplexitySignals:
-    # Add pattern
-    new_patterns = [r'pattern1', r'pattern2']
-    
-    return TaskComplexitySignals(
-        # ... existing ...
-        new_signal=any(re.search(p, prompt_lower) for p in new_patterns),
-    )
-```
-
-### Adding a Trajectory Event Type
-
-```python
-# In trajectory.py
-class TrajectoryEventType(Enum):
-    # ... existing ...
-    NEW_TYPE = "new_type"
-
-class TrajectoryRenderer:
-    ICONS = {
-        # ... existing ...
-        TrajectoryEventType.NEW_TYPE: "◇",
-    }
-    LABELS = {
-        # ... existing ...
-        TrajectoryEventType.NEW_TYPE: "NEWTYPE",
-    }
-```
+4. Run `/code-review` if significant changes
 
 ## Slash Commands
 
-Create in `.claude/commands/`:
+| Command | Purpose |
+|---------|---------|
+| `/rlm` | Toggle/configure RLM mode |
+| `/rlm status` | Show configuration |
+| `/rlm mode <fast\|balanced\|thorough>` | Set mode |
+| `/simple` | Bypass RLM once |
+| `/trajectory <file>` | Analyze trajectory |
+| `/test` | Run tests |
+| `/bench` | Run benchmarks |
+| `/code-review` | Review changes |
 
-- `/code-review` — Run code review checklist
-- `/test` — Run test suite
-- `/bench` — Run benchmarks
-- `/trajectory [file]` — Analyze trajectory
+## References
 
-## Contact
-
-This project implements the RLM paper: https://arxiv.org/abs/2512.24601v1
-
-Spec author: Rand (Head of AI, Heroku)
+- [RLM Paper](https://arxiv.org/abs/2512.24601v1)
+- [README](./README.md) — Full documentation
+- [User Guide](./docs/user-guide.md) — Usage details
