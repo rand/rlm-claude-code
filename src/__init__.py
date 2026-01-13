@@ -312,6 +312,18 @@ from .cross_session_promotion import (
     PromotionReason,
 )
 
+# Circuit breaker (SPEC-10.20-10.26)
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerMetrics,
+    CircuitState,
+    FailureRecord,
+    FallbackResult,
+    RecoveryTest,
+    TierCircuitBreaker,
+)
+
 # Trajectory and analysis
 from .trajectory import TrajectoryEvent, TrajectoryRenderer
 from .trajectory_analysis import StrategyType, TrajectoryAnalyzer
@@ -577,4 +589,13 @@ __all__ = [
     "PromotionDecision",
     "PromotionLog",
     "PromotionReason",
+    # Circuit breaker (SPEC-10.20-10.26)
+    "CircuitBreaker",
+    "CircuitBreakerConfig",
+    "CircuitBreakerMetrics",
+    "CircuitState",
+    "FailureRecord",
+    "FallbackResult",
+    "RecoveryTest",
+    "TierCircuitBreaker",
 ]
