@@ -164,8 +164,9 @@ def should_activate_rlm(
     # High-signal indicators (each sufficient alone)
     if signals.requires_cross_context_reasoning:
         return True, "cross_context_reasoning"
-    if signals.debugging_task and signals.recent_tool_outputs_large:
-        return True, "debugging_with_large_output"
+    if signals.debugging_task:
+        # Debugging is complex even without large outputs - need to trace causes
+        return True, "debugging_task"
     if signals.references_multiple_files and signals.files_span_multiple_modules:
         return True, "multi_module_task"
 
@@ -180,7 +181,7 @@ def should_activate_rlm(
         score += 2
         reasons.append("temporal")
     if signals.asks_about_patterns:
-        score += 1
+        score += 2  # Codebase-wide searches require systematic exploration
         reasons.append("pattern_search")
     if signals.context_has_multiple_domains:
         score += 1
