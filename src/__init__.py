@@ -196,6 +196,23 @@ from .tree_of_thoughts import (
     ToTConfig,
 )
 
+# Formal verification (SPEC-07.20-07.25)
+from .formal_verification import (
+    AutoCorrector,
+    CodeChange,
+    Constraint,
+    ConstraintType,
+    CorrectionAttempt,
+    CorrectionResult,
+    PostconditionGenerator,
+    PreconditionGenerator,
+    RefactoringPostconditions,
+    VerificationChain,
+    VerificationResult,
+    VerificationStatus,
+    Verifier,
+)
+
 # Proactive computation (SPEC-06.01-06.05)
 from .proactive_computation import (
     ComputationAdvisor,
@@ -432,6 +449,20 @@ __all__ = [
     "ThoughtNode",
     "ThoughtTree",
     "ToTConfig",
+    # Formal verification (SPEC-07.20-07.25)
+    "AutoCorrector",
+    "CodeChange",
+    "Constraint",
+    "ConstraintType",
+    "CorrectionAttempt",
+    "CorrectionResult",
+    "PostconditionGenerator",
+    "PreconditionGenerator",
+    "RefactoringPostconditions",
+    "VerificationChain",
+    "VerificationResult",
+    "VerificationStatus",
+    "Verifier",
     # Proactive computation (SPEC-06.01-06.05)
     "ComputationAdvisor",
     "ComputationHelper",
