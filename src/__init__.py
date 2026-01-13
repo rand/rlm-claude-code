@@ -13,6 +13,17 @@ Implements intelligent orchestration with:
 
 __version__ = "0.2.0"
 
+# Async execution (SPEC-08.01-08.06)
+from .async_executor import (
+    AsyncExecutor,
+    AsyncRLMOrchestrator,
+    BudgetChecker,
+    ExecutionResult,
+    PartialFailureResult,
+    SpeculativeExecution,
+    SpeculativeResult,
+)
+
 # Core orchestration
 from .auto_activation import AutoActivator, check_auto_activation
 
@@ -113,6 +124,14 @@ from .types import SessionContext
 from .user_preferences import PreferencesManager, UserPreferences
 
 __all__ = [
+    # Async execution (SPEC-08.01-08.06)
+    "AsyncExecutor",
+    "AsyncRLMOrchestrator",
+    "BudgetChecker",
+    "ExecutionResult",
+    "PartialFailureResult",
+    "SpeculativeExecution",
+    "SpeculativeResult",
     # Core
     "RLMOrchestrator",
     "IntelligentOrchestrator",
