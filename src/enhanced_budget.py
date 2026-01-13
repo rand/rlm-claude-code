@@ -87,6 +87,75 @@ class BudgetAlert:
 
 
 # =============================================================================
+# Burn Rate Data Classes (Feature 3e0.5)
+# =============================================================================
+
+
+@dataclass
+class CostSample:
+    """Single cost measurement for burn rate calculation."""
+
+    timestamp: float
+    cumulative_cost: float
+    model: str
+    call_type: str  # "root", "recursive", "repl"
+
+
+@dataclass
+class BurnRateMetrics:
+    """Real-time burn rate tracking."""
+
+    dollars_per_minute: float
+    tokens_per_minute: float
+    time_to_exhaustion_seconds: float | None  # None if not burning
+    is_burning_fast: bool  # True if will exhaust budget in < 5 minutes
+    measurement_window_seconds: float
+    sample_count: int
+
+
+@dataclass
+class BurnRateAlert:
+    """Alert for burn rate issues."""
+
+    level: str  # "warning", "critical"
+    message: str
+    current_rate: float  # $/minute
+    suggested_model: str | None
+    time_to_exhaustion: float | None
+    timestamp: float = field(default_factory=time.time)
+
+
+# =============================================================================
+# Adaptive Depth Data Classes (Feature 3e0.4)
+# =============================================================================
+
+
+@dataclass
+class AdaptiveDepthRecommendation:
+    """Depth recommendation based on budget state."""
+
+    recommended_depth: int  # 0-3
+    recommended_model: str
+    original_model: str
+    was_downgraded: bool
+    downgrade_reason: str | None
+    estimated_cost_per_depth: float
+    budget_utilization: float  # 0.0-1.0 (fraction of budget used)
+
+
+@dataclass
+class DepthBudgetWarning:
+    """Warning before expensive operation."""
+
+    operation: str  # "recursive_call", "depth_increase"
+    estimated_cost: float
+    remaining_budget: float
+    warning_level: str  # "info", "warning", "critical"
+    message: str
+    suggested_action: str  # "proceed", "downgrade_model", "reduce_depth", "abort"
+
+
+# =============================================================================
 # Default Configuration
 # =============================================================================
 
@@ -139,6 +208,13 @@ class EnhancedBudgetTracker:
 
         # Timing
         self._timing_start: float | None = None
+
+        # Burn rate tracking (Feature 3e0.5)
+        self._cost_samples: list[CostSample] = []
+        self._burn_rate_window_seconds: float = 60.0  # 1 minute sliding window
+        self._burn_rate_callbacks: list[Callable[[BurnRateAlert], None]] = []
+        self._max_cost_samples: int = 1000  # Prevent unbounded growth
+        self._token_samples: list[tuple[float, int]] = []  # (timestamp, tokens)
 
     def _load_config(
         self,
@@ -257,6 +333,21 @@ class EnhancedBudgetTracker:
         if component == CostComponent.RECURSIVE_CALL:
             self._metrics.sub_call_count += 1
 
+        # Record burn rate sample (Feature 3e0.5)
+        call_type = "recursive" if component == CostComponent.RECURSIVE_CALL else "root"
+        self.record_cost_sample(
+            cost=call_cost,
+            tokens=input_tokens + output_tokens,
+            model=model,
+            call_type=call_type,
+        )
+
+        # Check burn rate and notify callbacks
+        burn_alert = self.check_burn_rate()
+        if burn_alert:
+            for callback in self._burn_rate_callbacks:
+                callback(burn_alert)
+
         # Check for alerts
         return self._check_and_emit_alerts()
 
@@ -294,9 +385,7 @@ class EnhancedBudgetTracker:
         if self._timing_start is not None:
             elapsed = time.time() - self._timing_start
             self._metrics.wall_clock_seconds += elapsed
-            self._metrics.session_duration_seconds = (
-                time.time() - self._metrics.session_start
-            )
+            self._metrics.session_duration_seconds = time.time() - self._metrics.session_start
             self._timing_start = None
 
     # =========================================================================
@@ -571,9 +660,7 @@ class EnhancedBudgetTracker:
             self._timing_start = time.time()
 
         if self._metrics.session_start > 0:
-            self._metrics.session_duration_seconds = (
-                time.time() - self._metrics.session_start
-            )
+            self._metrics.session_duration_seconds = time.time() - self._metrics.session_start
 
         return EnhancedBudgetMetrics(
             input_tokens=self._metrics.input_tokens,
@@ -601,11 +688,397 @@ class EnhancedBudgetTracker:
         self._current_task_id = None
         self._task_cost = 0.0
         self._timing_start = None
+        self._cost_samples.clear()
+        self._token_samples.clear()
+
+    # =========================================================================
+    # Burn Rate Monitoring (Feature 3e0.5)
+    # =========================================================================
+
+    def record_cost_sample(
+        self,
+        cost: float,
+        tokens: int,
+        model: str,
+        call_type: str,
+    ) -> None:
+        """
+        Record a cost sample for burn rate tracking.
+
+        Maintains sliding window of samples, pruning old entries.
+
+        Args:
+            cost: Cost of this call in dollars
+            tokens: Total tokens used in this call
+            model: Model name
+            call_type: Type of call ("root", "recursive", "repl")
+        """
+        now = time.time()
+
+        # Add new sample
+        self._cost_samples.append(
+            CostSample(
+                timestamp=now,
+                cumulative_cost=self._metrics.total_cost_usd,
+                model=model,
+                call_type=call_type,
+            )
+        )
+        self._token_samples.append((now, tokens))
+
+        # Prune old samples beyond window
+        cutoff = now - self._burn_rate_window_seconds * 2  # Keep 2x window for smoothing
+        self._cost_samples = [s for s in self._cost_samples if s.timestamp > cutoff]
+        self._token_samples = [(t, n) for t, n in self._token_samples if t > cutoff]
+
+        # Enforce max samples limit
+        if len(self._cost_samples) > self._max_cost_samples:
+            self._cost_samples = self._cost_samples[-self._max_cost_samples :]
+        if len(self._token_samples) > self._max_cost_samples:
+            self._token_samples = self._token_samples[-self._max_cost_samples :]
+
+    def get_burn_rate(
+        self,
+        window_seconds: float | None = None,
+    ) -> BurnRateMetrics:
+        """
+        Calculate current burn rate over specified window.
+
+        Args:
+            window_seconds: Measurement window (default: 60s)
+
+        Returns:
+            BurnRateMetrics with current velocity and projections
+        """
+        window = window_seconds or self._burn_rate_window_seconds
+        now = time.time()
+        cutoff = now - window
+
+        # Filter samples within window
+        window_samples = [s for s in self._cost_samples if s.timestamp > cutoff]
+        window_tokens = [(t, n) for t, n in self._token_samples if t > cutoff]
+
+        if len(window_samples) < 2:
+            # Not enough data for rate calculation
+            return BurnRateMetrics(
+                dollars_per_minute=0.0,
+                tokens_per_minute=0.0,
+                time_to_exhaustion_seconds=None,
+                is_burning_fast=False,
+                measurement_window_seconds=window,
+                sample_count=len(window_samples),
+            )
+
+        # Calculate cost rate ($/minute)
+        first_sample = window_samples[0]
+        last_sample = window_samples[-1]
+        time_span = last_sample.timestamp - first_sample.timestamp
+
+        if time_span <= 0:
+            return BurnRateMetrics(
+                dollars_per_minute=0.0,
+                tokens_per_minute=0.0,
+                time_to_exhaustion_seconds=None,
+                is_burning_fast=False,
+                measurement_window_seconds=window,
+                sample_count=len(window_samples),
+            )
+
+        cost_delta = last_sample.cumulative_cost - first_sample.cumulative_cost
+        dollars_per_minute = (cost_delta / time_span) * 60.0
+
+        # Calculate token rate
+        total_tokens_in_window = sum(n for _, n in window_tokens)
+        tokens_per_minute = (total_tokens_in_window / time_span) * 60.0
+
+        # Calculate time to exhaustion
+        remaining_budget = self._limits.max_cost_per_task - self._task_cost
+        time_to_exhaustion: float | None = None
+        if dollars_per_minute > 0:
+            time_to_exhaustion = (remaining_budget / dollars_per_minute) * 60.0
+
+        # Determine if burning fast (< 5 minutes to exhaustion)
+        is_burning_fast = time_to_exhaustion is not None and time_to_exhaustion < 300.0
+
+        return BurnRateMetrics(
+            dollars_per_minute=dollars_per_minute,
+            tokens_per_minute=tokens_per_minute,
+            time_to_exhaustion_seconds=time_to_exhaustion,
+            is_burning_fast=is_burning_fast,
+            measurement_window_seconds=window,
+            sample_count=len(window_samples),
+        )
+
+    def check_burn_rate(self) -> BurnRateAlert | None:
+        """
+        Check if burn rate warrants an alert.
+
+        Alert thresholds:
+        - Warning: Will exhaust budget in < 5 minutes at current rate
+        - Critical: Will exhaust budget in < 2 minutes at current rate
+
+        Returns:
+            BurnRateAlert if threshold exceeded, None otherwise
+        """
+        metrics = self.get_burn_rate()
+
+        if metrics.time_to_exhaustion_seconds is None:
+            return None
+
+        # Critical: < 2 minutes to exhaustion
+        if metrics.time_to_exhaustion_seconds < 120.0:
+            suggested = self.suggest_model_for_burn_rate("opus", metrics)
+            return BurnRateAlert(
+                level="critical",
+                message=(
+                    f"Budget will be exhausted in {metrics.time_to_exhaustion_seconds:.0f}s "
+                    f"at current rate of ${metrics.dollars_per_minute:.3f}/min"
+                ),
+                current_rate=metrics.dollars_per_minute,
+                suggested_model=suggested[0] if suggested[0] != "opus" else None,
+                time_to_exhaustion=metrics.time_to_exhaustion_seconds,
+            )
+
+        # Warning: < 5 minutes to exhaustion
+        if metrics.time_to_exhaustion_seconds < 300.0:
+            suggested = self.suggest_model_for_burn_rate("sonnet", metrics)
+            return BurnRateAlert(
+                level="warning",
+                message=(
+                    f"High burn rate: ${metrics.dollars_per_minute:.3f}/min. "
+                    f"Budget exhaustion in {metrics.time_to_exhaustion_seconds:.0f}s"
+                ),
+                current_rate=metrics.dollars_per_minute,
+                suggested_model=suggested[0] if suggested[0] != "sonnet" else None,
+                time_to_exhaustion=metrics.time_to_exhaustion_seconds,
+            )
+
+        return None
+
+    def suggest_model_for_burn_rate(
+        self,
+        current_model: str,
+        metrics: BurnRateMetrics,
+    ) -> tuple[str, str]:
+        """
+        Suggest model downgrade based on burn rate.
+
+        Args:
+            current_model: Currently active model
+            metrics: Current burn rate metrics
+
+        Returns:
+            (suggested_model, reason) tuple
+        """
+        # Model cost ratios (relative to sonnet)
+        # opus: ~5x, sonnet: 1x, haiku: ~0.3x
+        model_lower = current_model.lower()
+
+        if metrics.time_to_exhaustion_seconds is None:
+            return current_model, "no_rate_data"
+
+        # If burning very fast (< 2 min), suggest haiku
+        if metrics.time_to_exhaustion_seconds < 120.0:
+            if "haiku" not in model_lower:
+                return "haiku", "critical_burn_rate"
+
+        # If burning fast (< 5 min), suggest downgrade by one tier
+        if metrics.time_to_exhaustion_seconds < 300.0:
+            if "opus" in model_lower:
+                return "sonnet", "high_burn_rate"
+            if "sonnet" in model_lower:
+                return "haiku", "high_burn_rate"
+
+        return current_model, "acceptable_burn_rate"
+
+    def on_burn_rate_alert(
+        self,
+        callback: Callable[[BurnRateAlert], None],
+    ) -> None:
+        """Register callback for burn rate alerts."""
+        self._burn_rate_callbacks.append(callback)
+
+    # =========================================================================
+    # Adaptive Depth Budgeting (Feature 3e0.4)
+    # =========================================================================
+
+    def compute_adaptive_depth(
+        self,
+        planned_depth: int,
+        planned_model: str,
+        avg_tokens_per_call: int = 5000,
+        avg_output_tokens: int = 1500,
+    ) -> AdaptiveDepthRecommendation:
+        """
+        Compute affordable depth and model based on remaining budget.
+
+        Implements: Feature 3e0.4 - Adaptive Depth Budgeting
+
+        Rules:
+        - budget >= 50%: Keep planned model
+        - 20% <= budget < 50%: Downgrade one tier (opus->sonnet, sonnet->haiku)
+        - budget < 20%: Force haiku
+
+        Args:
+            planned_depth: Originally planned depth (0-3)
+            planned_model: Originally planned model
+            avg_tokens_per_call: Expected input tokens per call
+            avg_output_tokens: Expected output tokens per call
+
+        Returns:
+            AdaptiveDepthRecommendation with adjusted depth and model
+        """
+        remaining_budget = self._limits.max_cost_per_task - self._task_cost
+        budget_fraction = remaining_budget / self._limits.max_cost_per_task
+
+        # Get recommended model based on budget fraction
+        recommended_model = self.get_recommended_model_for_budget(budget_fraction)
+        was_downgraded = recommended_model.lower() != planned_model.lower()
+
+        # Determine downgrade reason
+        downgrade_reason: str | None = None
+        if was_downgraded:
+            if budget_fraction < 0.2:
+                downgrade_reason = "budget_below_20_percent"
+            elif budget_fraction < 0.5:
+                downgrade_reason = "budget_below_50_percent"
+
+        # Estimate cost per depth level with recommended model
+        estimated_cost_per_depth = estimate_call_cost(
+            avg_tokens_per_call, avg_output_tokens, recommended_model
+        )
+
+        # Calculate max affordable depth
+        if estimated_cost_per_depth > 0:
+            max_affordable_depth = int(remaining_budget / estimated_cost_per_depth)
+            recommended_depth = min(planned_depth, max(0, max_affordable_depth))
+        else:
+            recommended_depth = planned_depth
+
+        return AdaptiveDepthRecommendation(
+            recommended_depth=recommended_depth,
+            recommended_model=recommended_model,
+            original_model=planned_model,
+            was_downgraded=was_downgraded,
+            downgrade_reason=downgrade_reason,
+            estimated_cost_per_depth=estimated_cost_per_depth,
+            budget_utilization=1.0 - budget_fraction,
+        )
+
+    def get_recommended_model_for_budget(
+        self,
+        budget_fraction: float,
+    ) -> str:
+        """
+        Recommend model based on budget state.
+
+        Rules:
+        - budget >= 50%: Return "opus" (no downgrade)
+        - 20% <= budget < 50%: Return "sonnet"
+        - budget < 20%: Return "haiku"
+
+        Args:
+            budget_fraction: Fraction of original budget remaining (0.0-1.0)
+
+        Returns:
+            Model name string
+        """
+        if budget_fraction >= 0.5:
+            return "opus"
+        elif budget_fraction >= 0.2:
+            return "sonnet"
+        else:
+            return "haiku"
+
+    def warn_before_expensive_operation(
+        self,
+        operation: str,
+        estimated_cost: float,
+        model: str,
+    ) -> DepthBudgetWarning | None:
+        """
+        Generate warning if operation would consume significant budget.
+
+        Generates warning when:
+        - Operation cost > 25% of remaining budget (warning)
+        - Operation cost > 50% of remaining budget (critical)
+        - Would exceed budget limit (critical)
+
+        Args:
+            operation: Type of operation ("recursive_call", "depth_increase")
+            estimated_cost: Estimated cost in dollars
+            model: Model being used
+
+        Returns:
+            DepthBudgetWarning if warning needed, None otherwise
+        """
+        remaining_budget = self._limits.max_cost_per_task - self._task_cost
+
+        if remaining_budget <= 0:
+            return DepthBudgetWarning(
+                operation=operation,
+                estimated_cost=estimated_cost,
+                remaining_budget=remaining_budget,
+                warning_level="critical",
+                message="Budget exhausted. Cannot proceed with operation.",
+                suggested_action="abort",
+            )
+
+        cost_fraction = estimated_cost / remaining_budget
+
+        # Would exceed budget
+        if estimated_cost > remaining_budget:
+            return DepthBudgetWarning(
+                operation=operation,
+                estimated_cost=estimated_cost,
+                remaining_budget=remaining_budget,
+                warning_level="critical",
+                message=(
+                    f"Operation would exceed budget: ${estimated_cost:.4f} > "
+                    f"${remaining_budget:.4f} remaining"
+                ),
+                suggested_action="abort",
+            )
+
+        # > 50% of remaining budget - critical
+        if cost_fraction > 0.5:
+            return DepthBudgetWarning(
+                operation=operation,
+                estimated_cost=estimated_cost,
+                remaining_budget=remaining_budget,
+                warning_level="critical",
+                message=(
+                    f"Operation will use {cost_fraction:.0%} of remaining budget "
+                    f"(${estimated_cost:.4f} of ${remaining_budget:.4f})"
+                ),
+                suggested_action="downgrade_model",
+            )
+
+        # > 25% of remaining budget - warning
+        if cost_fraction > 0.25:
+            return DepthBudgetWarning(
+                operation=operation,
+                estimated_cost=estimated_cost,
+                remaining_budget=remaining_budget,
+                warning_level="warning",
+                message=(
+                    f"Operation will use {cost_fraction:.0%} of remaining budget "
+                    f"(${estimated_cost:.4f} of ${remaining_budget:.4f})"
+                ),
+                suggested_action="proceed",
+            )
+
+        return None
 
 
 __all__ = [
+    "AdaptiveDepthRecommendation",
     "BudgetAlert",
     "BudgetLimits",
+    "BurnRateAlert",
+    "BurnRateMetrics",
+    "CostSample",
+    "DepthBudgetWarning",
     "EnhancedBudgetMetrics",
     "EnhancedBudgetTracker",
 ]

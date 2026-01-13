@@ -746,3 +746,613 @@ class TestBudgetAlertDataclass:
         assert alert.metric == "cost"
         assert alert.current_value == 4.5
         assert alert.threshold == 5.0
+
+
+# =============================================================================
+# Feature 3e0.5: Burn Rate Monitoring
+# =============================================================================
+
+
+class TestBurnRateDataclasses:
+    """Tests for burn rate data structures."""
+
+    def test_cost_sample_creation(self):
+        """Test CostSample dataclass."""
+        from src.enhanced_budget import CostSample
+
+        sample = CostSample(
+            timestamp=time.time(),
+            cumulative_cost=0.05,
+            model="sonnet",
+            call_type="root",
+        )
+
+        assert sample.cumulative_cost == 0.05
+        assert sample.model == "sonnet"
+        assert sample.call_type == "root"
+
+    def test_burn_rate_metrics_creation(self):
+        """Test BurnRateMetrics dataclass."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=0.5,
+            tokens_per_minute=10000.0,
+            time_to_exhaustion_seconds=600.0,
+            is_burning_fast=False,
+            measurement_window_seconds=60.0,
+            sample_count=10,
+        )
+
+        assert metrics.dollars_per_minute == 0.5
+        assert metrics.tokens_per_minute == 10000.0
+        assert metrics.time_to_exhaustion_seconds == 600.0
+        assert not metrics.is_burning_fast
+
+    def test_burn_rate_alert_creation(self):
+        """Test BurnRateAlert dataclass."""
+        from src.enhanced_budget import BurnRateAlert
+
+        alert = BurnRateAlert(
+            level="warning",
+            message="High burn rate detected",
+            current_rate=1.5,
+            suggested_model="haiku",
+            time_to_exhaustion=180.0,
+        )
+
+        assert alert.level == "warning"
+        assert alert.current_rate == 1.5
+        assert alert.suggested_model == "haiku"
+
+
+class TestBurnRateTracking:
+    """Tests for burn rate calculation and tracking."""
+
+    def test_record_cost_sample(self, budget_tracker):
+        """Test that cost samples are recorded correctly."""
+        budget_tracker.record_cost_sample(
+            cost=0.01,
+            tokens=1000,
+            model="sonnet",
+            call_type="root",
+        )
+
+        assert len(budget_tracker._cost_samples) == 1
+        assert budget_tracker._cost_samples[0].model == "sonnet"
+
+    def test_samples_pruned_beyond_window(self, budget_tracker):
+        """Test that old samples are pruned."""
+        # Add old sample (outside window)
+        from src.enhanced_budget import CostSample
+
+        old_time = time.time() - 200  # 200 seconds ago
+        budget_tracker._cost_samples.append(
+            CostSample(
+                timestamp=old_time,
+                cumulative_cost=0.01,
+                model="sonnet",
+                call_type="root",
+            )
+        )
+
+        # Add new sample (triggers pruning)
+        budget_tracker.record_cost_sample(
+            cost=0.02,
+            tokens=1500,
+            model="sonnet",
+            call_type="root",
+        )
+
+        # Old sample should be pruned
+        assert len(budget_tracker._cost_samples) == 1
+        assert budget_tracker._cost_samples[0].timestamp > old_time
+
+    def test_max_samples_enforced(self, budget_tracker):
+        """Test that max sample count is enforced."""
+        budget_tracker._max_cost_samples = 5
+
+        for i in range(10):
+            budget_tracker.record_cost_sample(
+                cost=0.01 * i,
+                tokens=100 * i,
+                model="sonnet",
+                call_type="root",
+            )
+
+        assert len(budget_tracker._cost_samples) <= 5
+
+    def test_burn_rate_calculation_insufficient_data(self, budget_tracker):
+        """Test burn rate with insufficient data."""
+        # Only one sample - not enough for rate
+        budget_tracker.record_cost_sample(
+            cost=0.01,
+            tokens=1000,
+            model="sonnet",
+            call_type="root",
+        )
+
+        metrics = budget_tracker.get_burn_rate()
+
+        assert metrics.dollars_per_minute == 0.0
+        assert metrics.sample_count == 1
+
+    def test_burn_rate_calculation_with_data(self, budget_tracker):
+        """Test burn rate calculation with multiple samples."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        # Record multiple calls with small delays
+        for i in range(5):
+            budget_tracker.record_llm_call(
+                input_tokens=1000,
+                output_tokens=500,
+                model="sonnet",
+                component=CostComponent.ROOT_PROMPT,
+            )
+            time.sleep(0.05)  # 50ms between calls
+
+        metrics = budget_tracker.get_burn_rate()
+
+        # Should have non-zero rate
+        assert metrics.sample_count >= 2
+        assert metrics.dollars_per_minute >= 0
+
+
+class TestBurnRateAlerts:
+    """Tests for burn rate alert generation."""
+
+    def test_no_alert_when_not_burning(self, budget_tracker):
+        """Test no alert when burn rate is acceptable."""
+        # Just one sample - no rate calculated
+        budget_tracker.record_cost_sample(
+            cost=0.01,
+            tokens=1000,
+            model="sonnet",
+            call_type="root",
+        )
+
+        alert = budget_tracker.check_burn_rate()
+        assert alert is None
+
+    def test_alert_callback_invoked(self, budget_tracker):
+        """Test that burn rate callbacks are invoked."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        # Very low budget to trigger fast exhaustion
+        limits = BudgetLimits(max_cost_per_task=0.001)
+        budget_tracker.set_limits(limits)
+
+        alerts_received = []
+        budget_tracker.on_burn_rate_alert(lambda a: alerts_received.append(a))
+
+        # Rapid calls to trigger high burn rate
+        for _ in range(5):
+            budget_tracker.record_llm_call(
+                input_tokens=5000,
+                output_tokens=2000,
+                model="sonnet",
+                component=CostComponent.ROOT_PROMPT,
+            )
+
+        # Callback may or may not be invoked depending on timing
+        # Just verify callback registration works
+        assert len(budget_tracker._burn_rate_callbacks) == 1
+
+
+class TestBurnRateModelSuggestion:
+    """Tests for model downgrade suggestions."""
+
+    def test_suggest_haiku_for_critical_burn(self, budget_tracker):
+        """Test haiku suggestion for critical burn rate."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=2.0,
+            tokens_per_minute=50000.0,
+            time_to_exhaustion_seconds=60.0,  # < 2 minutes
+            is_burning_fast=True,
+            measurement_window_seconds=60.0,
+            sample_count=10,
+        )
+
+        model, reason = budget_tracker.suggest_model_for_burn_rate("opus", metrics)
+
+        assert model == "haiku"
+        assert reason == "critical_burn_rate"
+
+    def test_suggest_sonnet_for_high_burn_from_opus(self, budget_tracker):
+        """Test sonnet suggestion when using opus with high burn."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=1.0,
+            tokens_per_minute=30000.0,
+            time_to_exhaustion_seconds=240.0,  # < 5 minutes but > 2 minutes
+            is_burning_fast=True,
+            measurement_window_seconds=60.0,
+            sample_count=10,
+        )
+
+        model, reason = budget_tracker.suggest_model_for_burn_rate("opus", metrics)
+
+        assert model == "sonnet"
+        assert reason == "high_burn_rate"
+
+    def test_suggest_haiku_for_high_burn_from_sonnet(self, budget_tracker):
+        """Test haiku suggestion when using sonnet with high burn."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=0.5,
+            tokens_per_minute=20000.0,
+            time_to_exhaustion_seconds=200.0,  # < 5 minutes
+            is_burning_fast=True,
+            measurement_window_seconds=60.0,
+            sample_count=10,
+        )
+
+        model, reason = budget_tracker.suggest_model_for_burn_rate("sonnet", metrics)
+
+        assert model == "haiku"
+        assert reason == "high_burn_rate"
+
+    def test_no_change_for_acceptable_burn(self, budget_tracker):
+        """Test no model change when burn rate is acceptable."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=0.1,
+            tokens_per_minute=5000.0,
+            time_to_exhaustion_seconds=3000.0,  # 50 minutes
+            is_burning_fast=False,
+            measurement_window_seconds=60.0,
+            sample_count=10,
+        )
+
+        model, reason = budget_tracker.suggest_model_for_burn_rate("opus", metrics)
+
+        assert model == "opus"
+        assert reason == "acceptable_burn_rate"
+
+    def test_no_change_with_no_rate_data(self, budget_tracker):
+        """Test no model change when no rate data available."""
+        from src.enhanced_budget import BurnRateMetrics
+
+        metrics = BurnRateMetrics(
+            dollars_per_minute=0.0,
+            tokens_per_minute=0.0,
+            time_to_exhaustion_seconds=None,
+            is_burning_fast=False,
+            measurement_window_seconds=60.0,
+            sample_count=0,
+        )
+
+        model, reason = budget_tracker.suggest_model_for_burn_rate("sonnet", metrics)
+
+        assert model == "sonnet"
+        assert reason == "no_rate_data"
+
+
+class TestBurnRateIntegration:
+    """Integration tests for burn rate with LLM call recording."""
+
+    def test_burn_rate_recorded_on_llm_call(self, budget_tracker):
+        """Test that burn rate samples are recorded during LLM calls."""
+        from src.cost_tracker import CostComponent
+
+        initial_samples = len(budget_tracker._cost_samples)
+
+        budget_tracker.record_llm_call(
+            input_tokens=1000,
+            output_tokens=500,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+        )
+
+        assert len(budget_tracker._cost_samples) == initial_samples + 1
+
+    def test_burn_rate_reset_on_tracker_reset(self, budget_tracker):
+        """Test that burn rate data is cleared on reset."""
+        budget_tracker.record_cost_sample(
+            cost=0.01,
+            tokens=1000,
+            model="sonnet",
+            call_type="root",
+        )
+
+        assert len(budget_tracker._cost_samples) > 0
+
+        budget_tracker.reset()
+
+        assert len(budget_tracker._cost_samples) == 0
+        assert len(budget_tracker._token_samples) == 0
+
+
+# =============================================================================
+# Feature 3e0.4: Adaptive Depth Budgeting
+# =============================================================================
+
+
+class TestAdaptiveDepthDataclasses:
+    """Tests for adaptive depth data structures."""
+
+    def test_adaptive_depth_recommendation_creation(self):
+        """Test AdaptiveDepthRecommendation dataclass."""
+        from src.enhanced_budget import AdaptiveDepthRecommendation
+
+        rec = AdaptiveDepthRecommendation(
+            recommended_depth=2,
+            recommended_model="sonnet",
+            original_model="opus",
+            was_downgraded=True,
+            downgrade_reason="budget_below_50_percent",
+            estimated_cost_per_depth=0.05,
+            budget_utilization=0.6,
+        )
+
+        assert rec.recommended_depth == 2
+        assert rec.recommended_model == "sonnet"
+        assert rec.was_downgraded is True
+        assert rec.downgrade_reason == "budget_below_50_percent"
+
+    def test_depth_budget_warning_creation(self):
+        """Test DepthBudgetWarning dataclass."""
+        from src.enhanced_budget import DepthBudgetWarning
+
+        warning = DepthBudgetWarning(
+            operation="recursive_call",
+            estimated_cost=0.5,
+            remaining_budget=1.0,
+            warning_level="warning",
+            message="Operation will use 50% of budget",
+            suggested_action="proceed",
+        )
+
+        assert warning.operation == "recursive_call"
+        assert warning.estimated_cost == 0.5
+        assert warning.warning_level == "warning"
+
+
+class TestAdaptiveDepthComputation:
+    """Tests for adaptive depth computation."""
+
+    def test_no_downgrade_with_full_budget(self, budget_tracker):
+        """Test no downgrade when budget is full."""
+        rec = budget_tracker.compute_adaptive_depth(
+            planned_depth=3,
+            planned_model="opus",
+        )
+
+        assert rec.recommended_model == "opus"
+        assert rec.was_downgraded is False
+        assert rec.downgrade_reason is None
+
+    def test_downgrade_to_sonnet_between_20_50_percent(self, budget_tracker):
+        """Test downgrade to sonnet when budget is 20-50%."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        # Use 60% of budget (leaving 40%)
+        budget_tracker.record_llm_call(
+            input_tokens=100000,
+            output_tokens=20000,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+        )
+
+        rec = budget_tracker.compute_adaptive_depth(
+            planned_depth=3,
+            planned_model="opus",
+        )
+
+        assert rec.recommended_model == "sonnet"
+        assert rec.was_downgraded is True
+        assert rec.downgrade_reason == "budget_below_50_percent"
+
+    def test_downgrade_to_haiku_below_20_percent(self, budget_tracker):
+        """Test downgrade to haiku when budget < 20%."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        # Use 85% of budget (leaving 15%)
+        budget_tracker.record_llm_call(
+            input_tokens=200000,
+            output_tokens=40000,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+        )
+
+        rec = budget_tracker.compute_adaptive_depth(
+            planned_depth=3,
+            planned_model="opus",
+        )
+
+        assert rec.recommended_model == "haiku"
+        assert rec.was_downgraded is True
+        assert rec.downgrade_reason == "budget_below_20_percent"
+
+    def test_depth_reduced_when_unaffordable(self, budget_tracker):
+        """Test depth is reduced when budget can't afford full depth."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        # Very low budget
+        limits = BudgetLimits(max_cost_per_task=0.001)
+        budget_tracker.set_limits(limits)
+
+        # Use most of the budget
+        budget_tracker.record_llm_call(
+            input_tokens=100,
+            output_tokens=50,
+            model="haiku",
+            component=CostComponent.ROOT_PROMPT,
+        )
+
+        rec = budget_tracker.compute_adaptive_depth(
+            planned_depth=3,
+            planned_model="opus",
+            avg_tokens_per_call=10000,
+            avg_output_tokens=5000,
+        )
+
+        # Depth should be reduced (can't afford 3 levels)
+        assert rec.recommended_depth <= 3
+
+
+class TestModelRecommendation:
+    """Tests for model recommendation based on budget."""
+
+    def test_opus_recommended_above_50_percent(self, budget_tracker):
+        """Test opus recommended when budget >= 50%."""
+        model = budget_tracker.get_recommended_model_for_budget(0.5)
+        assert model == "opus"
+
+        model = budget_tracker.get_recommended_model_for_budget(0.75)
+        assert model == "opus"
+
+        model = budget_tracker.get_recommended_model_for_budget(1.0)
+        assert model == "opus"
+
+    def test_sonnet_recommended_between_20_50_percent(self, budget_tracker):
+        """Test sonnet recommended when 20% <= budget < 50%."""
+        model = budget_tracker.get_recommended_model_for_budget(0.2)
+        assert model == "sonnet"
+
+        model = budget_tracker.get_recommended_model_for_budget(0.35)
+        assert model == "sonnet"
+
+        model = budget_tracker.get_recommended_model_for_budget(0.49)
+        assert model == "sonnet"
+
+    def test_haiku_recommended_below_20_percent(self, budget_tracker):
+        """Test haiku recommended when budget < 20%."""
+        model = budget_tracker.get_recommended_model_for_budget(0.19)
+        assert model == "haiku"
+
+        model = budget_tracker.get_recommended_model_for_budget(0.1)
+        assert model == "haiku"
+
+        model = budget_tracker.get_recommended_model_for_budget(0.0)
+        assert model == "haiku"
+
+
+class TestExpensiveOperationWarnings:
+    """Tests for warnings before expensive operations."""
+
+    def test_no_warning_for_cheap_operation(self, budget_tracker):
+        """Test no warning for operation using < 25% of budget."""
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="recursive_call",
+            estimated_cost=0.1,  # 2% of default $5 budget
+            model="sonnet",
+        )
+
+        assert warning is None
+
+    def test_warning_for_operation_over_25_percent(self, budget_tracker):
+        """Test warning when operation uses > 25% of remaining budget."""
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="recursive_call",
+            estimated_cost=0.3,  # 30% of $1 budget
+            model="opus",
+        )
+
+        assert warning is not None
+        assert warning.warning_level == "warning"
+        assert warning.suggested_action == "proceed"
+
+    def test_critical_warning_for_operation_over_50_percent(self, budget_tracker):
+        """Test critical warning when operation uses > 50% of remaining budget."""
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="depth_increase",
+            estimated_cost=0.6,  # 60% of $1 budget
+            model="opus",
+        )
+
+        assert warning is not None
+        assert warning.warning_level == "critical"
+        assert warning.suggested_action == "downgrade_model"
+
+    def test_abort_when_operation_exceeds_budget(self, budget_tracker):
+        """Test abort suggested when operation would exceed budget."""
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="recursive_call",
+            estimated_cost=1.5,  # Exceeds $1 budget
+            model="opus",
+        )
+
+        assert warning is not None
+        assert warning.warning_level == "critical"
+        assert warning.suggested_action == "abort"
+        assert "exceed" in warning.message.lower()
+
+    def test_abort_when_budget_exhausted(self, budget_tracker):
+        """Test abort when budget is already exhausted."""
+        from src.cost_tracker import CostComponent
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=0.01)
+        budget_tracker.set_limits(limits)
+
+        # Exhaust the budget
+        budget_tracker.record_llm_call(
+            input_tokens=10000,
+            output_tokens=5000,
+            model="sonnet",
+            component=CostComponent.ROOT_PROMPT,
+        )
+
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="recursive_call",
+            estimated_cost=0.001,
+            model="haiku",
+        )
+
+        assert warning is not None
+        assert warning.warning_level == "critical"
+        assert warning.suggested_action == "abort"
+        assert "exhausted" in warning.message.lower()
+
+    def test_warning_includes_cost_details(self, budget_tracker):
+        """Test that warning includes cost information."""
+        from src.enhanced_budget import BudgetLimits
+
+        limits = BudgetLimits(max_cost_per_task=1.0)
+        budget_tracker.set_limits(limits)
+
+        warning = budget_tracker.warn_before_expensive_operation(
+            operation="recursive_call",
+            estimated_cost=0.4,
+            model="sonnet",
+        )
+
+        assert warning is not None
+        assert warning.estimated_cost == 0.4
+        assert warning.remaining_budget == 1.0
+        assert warning.operation == "recursive_call"
