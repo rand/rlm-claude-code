@@ -121,6 +121,33 @@ class OrchestrationPlan:
 
     This combines activation, routing, and execution preferences
     into a single plan that the orchestrator follows.
+
+    Key Attributes:
+        activate_rlm: Whether to use RLM (True) or direct response (False)
+        activation_reason: Human-readable reason for the decision
+        model_tier: FAST/BALANCED/POWERFUL model selection
+        primary_model: Specific model ID (e.g., "claude-sonnet-4-20250514")
+        depth_budget: Max recursion depth (0=no recursion, 1-3=sub-queries)
+        execution_mode: FAST/BALANCED/THOROUGH processing intensity
+        tool_access: NONE/REPL_ONLY/READ_ONLY/FULL tool permissions
+
+    Example:
+        >>> from src.orchestration_schema import (
+        ...     OrchestrationPlan, ModelTier, ExecutionMode, ToolAccessLevel
+        ... )
+        >>> plan = OrchestrationPlan(
+        ...     activate_rlm=True,
+        ...     activation_reason="Complex multi-file debugging",
+        ...     model_tier=ModelTier.POWERFUL,
+        ...     primary_model="claude-opus-4-5-20251101",
+        ...     depth_budget=3,
+        ...     execution_mode=ExecutionMode.THOROUGH,
+        ...     tool_access=ToolAccessLevel.FULL
+        ... )
+        >>> plan.activate_rlm  # Check if RLM will be used
+        True
+        >>> plan.allows_recursion  # Check if sub-queries allowed
+        True
     """
 
     # === RLM Activation ===

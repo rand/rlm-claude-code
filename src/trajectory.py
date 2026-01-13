@@ -36,6 +36,28 @@ class TrajectoryEvent:
     A single event in the RLM trajectory.
 
     Implements: Spec §6.6 Streaming Trajectory Visibility
+
+    Attributes:
+        type: Event type from TrajectoryEventType enum
+        depth: Recursion depth (0 = root, 1+ = sub-queries)
+        content: Human-readable event description
+        metadata: Optional structured data for the event
+        timestamp: Unix timestamp (auto-generated if not provided)
+
+    Example:
+        >>> from src.trajectory import TrajectoryEvent, TrajectoryEventType
+        >>> event = TrajectoryEvent(
+        ...     type=TrajectoryEventType.RLM_START,
+        ...     depth=0,
+        ...     content="Starting RLM analysis"
+        ... )
+        >>> # Or with metadata:
+        >>> event = TrajectoryEvent(
+        ...     type=TrajectoryEventType.REPL_EXEC,
+        ...     depth=1,
+        ...     content="x = search(files, 'error')",
+        ...     metadata={"code_length": 25}
+        ... )
     """
 
     type: TrajectoryEventType

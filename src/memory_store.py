@@ -318,36 +318,58 @@ class MemoryStore:
 
     def create_node(
         self,
-        node_type: str,
-        content: str,
+        node_type: str | None = None,
+        content: str | None = None,
         tier: str = "task",
         confidence: float = 0.5,
         subtype: str | None = None,
         embedding: bytes | None = None,
         provenance: str | None = None,
         metadata: dict[str, Any] | None = None,
+        *,
+        type: str | None = None,
     ) -> str:
         """
-        Create a new node.
+        Create a new node in the memory store.
 
         Implements: Spec SPEC-02.20
 
         Args:
-            node_type: Type of node (entity, fact, experience, decision, snippet)
-            content: Node content
+            node_type: Type of node (alias: type). Valid types:
+                - "entity": Named entities (people, places, concepts)
+                - "fact": Verified facts about the codebase
+                - "experience": Past interactions and their outcomes
+                - "decision": Architectural/design decisions
+                - "snippet": Code snippets
+            content: Node content (required)
             tier: Memory tier (task, session, longterm, archive)
             confidence: Confidence score [0.0, 1.0]
-            subtype: Optional subtype
-            embedding: Optional embedding blob
-            provenance: Optional provenance string
+            subtype: Optional subtype for categorization
+            embedding: Optional embedding blob for vector search
+            provenance: Optional source/origin string
             metadata: Optional metadata dict
+            type: Alias for node_type
 
         Returns:
-            Node ID (UUID)
+            Node ID (UUID string)
 
         Raises:
-            ValueError: If parameters are invalid
+            ValueError: If node_type is invalid or content is missing
+
+        Example:
+            >>> store = MemoryStore(":memory:")
+            >>> node_id = store.create_node("fact", "Auth uses JWT tokens")
+            >>> node_id = store.create_node(type="experience", content="Refactored auth module")
         """
+        # Handle type alias
+        if type is not None:
+            node_type = type
+
+        # Validate required parameters
+        if node_type is None:
+            raise ValueError("node_type (or type=) is required")
+        if content is None:
+            raise ValueError("content is required")
         # Validate node type (SPEC-02.05)
         if node_type not in self.VALID_NODE_TYPES:
             raise ValueError(
@@ -1363,6 +1385,9 @@ class MemoryStore:
         limit: int = 20,
         node_type: str | None = None,
         min_confidence: float | None = None,
+        *,
+        k: int | None = None,
+        type: str | None = None,
     ) -> list[SearchResult]:
         """
         Search node content using FTS5 with BM25 ranking.
@@ -1371,13 +1396,25 @@ class MemoryStore:
 
         Args:
             query: Search query (supports FTS5 syntax: AND, OR, NOT, prefix*, "phrase")
-            limit: Maximum results to return
-            node_type: Filter by node type (entity, fact, experience, decision, snippet)
+            limit: Maximum results to return (alias: k)
+            node_type: Filter by node type (alias: type)
             min_confidence: Minimum confidence threshold
+            k: Alias for limit (common in ML/vector store APIs)
+            type: Alias for node_type
 
         Returns:
             List of SearchResult objects sorted by BM25 relevance
+
+        Example:
+            >>> store = MemoryStore(":memory:")
+            >>> results = store.search("error handling", k=5)
+            >>> results = store.search("auth", type="fact", limit=10)
         """
+        # Handle parameter aliases
+        if k is not None:
+            limit = k
+        if type is not None:
+            node_type = type
         if not query or not query.strip():
             return []
 

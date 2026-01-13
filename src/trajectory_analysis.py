@@ -73,7 +73,31 @@ class TrajectoryMetrics:
 
 @dataclass
 class StrategyAnalysis:
-    """Complete analysis of a trajectory's strategies."""
+    """
+    Complete analysis of a trajectory's strategies.
+
+    Provides insights into what approaches were used during an RLM execution
+    and how effective they were.
+
+    Key Attributes:
+        primary_strategy: The dominant strategy detected (e.g., SEARCH_AND_SYNTHESIZE)
+        strategies: All detected strategies with confidence scores
+        strategy_confidence: Confidence in the primary strategy identification
+        metrics: Quantitative metrics (events, tokens, depth, etc.)
+        success: Whether the trajectory completed successfully
+        effectiveness_score: Overall effectiveness rating (0.0-1.0)
+
+    Example:
+        >>> from src.trajectory_analysis import TrajectoryAnalyzer
+        >>> analyzer = TrajectoryAnalyzer()
+        >>> analysis = analyzer.analyze(trajectory_events)
+        >>> print(f"Strategy: {analysis.primary_strategy.value}")
+        Strategy: search_and_synthesize
+        >>> print(f"Confidence: {analysis.strategy_confidence:.0%}")
+        Confidence: 85%
+        >>> print(f"All strategies: {[s.strategy.value for s in analysis.strategies]}")
+        All strategies: ['search_and_synthesize', 'recursive_decomposition']
+    """
 
     # Detected strategies
     strategies: list[StrategySignal] = field(default_factory=list)

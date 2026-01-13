@@ -317,6 +317,32 @@ class EnhancedBudgetTracker:
         Record LLM call and return any triggered alerts.
 
         Implements: Spec SPEC-05.01-02
+
+        Args:
+            input_tokens: Number of input tokens consumed
+            output_tokens: Number of output tokens generated
+            model: Model identifier (e.g., "claude-sonnet-4-20250514")
+            component: Cost attribution component. Valid values:
+                - CostComponent.ROOT_PROMPT: Main conversation turn
+                - CostComponent.RECURSIVE_CALL: Sub-query/recursive LLM call
+                - CostComponent.SUMMARIZATION: Context summarization
+                - CostComponent.CONTEXT_LOAD: Loading context from memory
+                - CostComponent.TOOL_OUTPUT: Processing tool outputs
+            cached_tokens: Number of tokens served from cache (reduces cost)
+            latency_ms: Call latency in milliseconds (for metrics)
+
+        Returns:
+            List of BudgetAlert objects if any limits exceeded
+
+        Example:
+            >>> from src.cost_tracker import CostComponent
+            >>> tracker = EnhancedBudgetTracker()
+            >>> alerts = tracker.record_llm_call(
+            ...     input_tokens=1000,
+            ...     output_tokens=500,
+            ...     model="claude-sonnet-4-20250514",
+            ...     component=CostComponent.ROOT_PROMPT
+            ... )
         """
         # Update token metrics
         self._metrics.input_tokens += input_tokens
