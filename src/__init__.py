@@ -82,6 +82,16 @@ from .orchestration_telemetry import (
 )
 from .orchestrator import RLMOrchestrator
 
+# Prompt caching (SPEC-08.10-08.15)
+from .prompt_caching import (
+    CacheablePrompt,
+    CacheMetrics,
+    CachePrefix,
+    CachePrefixRegistry,
+    PromptCacheManager,
+    build_cacheable_prompt,
+)
+
 # Progress reporting (SPEC-01.05 - Phase 4)
 from .progress import (
     CancellationToken,
@@ -221,6 +231,13 @@ __all__ = [
     "ContextIndex",
     "FileIndex",
     "IndexStats",
+    # Prompt caching (SPEC-08.10-08.15)
+    "CacheablePrompt",
+    "CacheMetrics",
+    "CachePrefix",
+    "CachePrefixRegistry",
+    "PromptCacheManager",
+    "build_cacheable_prompt",
     # Progress reporting (SPEC-01.05 - Phase 4)
     "OperationType",
     "ProgressUpdate",
