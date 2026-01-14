@@ -12,7 +12,6 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
-
 # ============================================================================
 # Typed Payload Schemas (SPEC-12.08)
 # ============================================================================
@@ -334,6 +333,111 @@ class TrajectoryRenderer:
         return content[: limit - 3] + "..."
 
 
+class RichTrajectoryRenderer:
+    """
+    Rich-based trajectory renderer using RLMConsole.
+
+    Implements: SPEC-13 Rich Output Formatting
+    """
+
+    def __init__(self, verbosity: str = "normal", colors: bool = True):
+        """
+        Initialize Rich renderer.
+
+        Args:
+            verbosity: "minimal" | "normal" | "verbose" | "debug"
+            colors: Whether to use colors
+        """
+        from src.rich_output import OutputConfig, RLMConsole
+
+        # Map old verbosity to new
+        verbosity_map = {"minimal": "quiet", "normal": "normal", "verbose": "verbose", "debug": "debug"}
+        mapped_verbosity = verbosity_map.get(verbosity, "normal")
+
+        config = OutputConfig(verbosity=mapped_verbosity, colors=colors)  # type: ignore[arg-type]
+        self.console = RLMConsole(config)
+        self.verbosity = verbosity
+        self.colors = colors
+
+    def render_event(self, event: TrajectoryEvent) -> str:
+        """
+        Render event using Rich console.
+
+        Returns empty string as Rich prints directly.
+        """
+        event_type = event.type
+        depth = event.depth
+        content = self._truncate_content(event.content, event_type)
+
+        if event_type == TrajectoryEventType.RLM_START:
+            self.console.emit_start(content, depth_budget=3)
+        elif event_type == TrajectoryEventType.REPL_EXEC:
+            # Parse function name from content
+            func = "repl"
+            args = content[:50]
+            if "(" in content:
+                func = content.split("(")[0].strip()
+                args = content
+            self.console.emit_repl(func, args, depth=depth)
+        elif event_type == TrajectoryEventType.REPL_RESULT:
+            self.console.emit_result(content, depth=depth)
+        elif event_type == TrajectoryEventType.RECURSE_START:
+            self.console.emit_recurse(content, depth=depth + 1)
+        elif event_type == TrajectoryEventType.RECURSE_END:
+            # Extract token count from content like "Returned (500 tokens, 100ms)"
+            tokens = 0
+            if "tokens" in content:
+                try:
+                    tokens = int(content.split("(")[1].split()[0])
+                except (IndexError, ValueError):
+                    pass
+            self.console.emit_complete(tokens_used=tokens, depth=depth)
+        elif event_type == TrajectoryEventType.ERROR:
+            self.console.emit_error(content, depth=depth)
+        elif event_type == TrajectoryEventType.BUDGET_ALERT:
+            self.console.emit_warning(content, depth=depth)
+        elif event_type == TrajectoryEventType.FINAL:
+            self.console.emit_result(content, depth=depth, is_last=True)
+        elif event_type == TrajectoryEventType.COST_REPORT:
+            # Parse tokens from content like "Cost: $0.01 (1000+500 tokens)"
+            if "tokens" in content.lower():
+                try:
+                    parts = content.split("(")[1].split("+")
+                    input_tokens = int(parts[0])
+                    output_tokens = int(parts[1].split()[0])
+                    self.console.emit_budget(input_tokens + output_tokens, 100000)
+                except (IndexError, ValueError):
+                    pass
+        # Other event types use default rendering
+        else:
+            # Fall back to basic output for unsupported types
+            self.console.console.print(f"  {content}")
+
+        return ""  # Rich prints directly
+
+    def _truncate_content(self, content: str, event_type: TrajectoryEventType) -> str:
+        """Truncate content based on verbosity."""
+        limits = {
+            "minimal": {"default": 60, "repl_result": 40, "reason": 80},
+            "normal": {"default": 120, "repl_result": 80, "reason": 200},
+            "verbose": {"default": 300, "repl_result": 200, "reason": 500},
+            "debug": {"default": 1000, "repl_result": 1000, "reason": 1000},
+        }
+
+        key = (
+            "repl_result"
+            if event_type == TrajectoryEventType.REPL_RESULT
+            else "reason"
+            if event_type == TrajectoryEventType.REASON
+            else "default"
+        )
+        limit = limits[self.verbosity][key]
+
+        if len(content) <= limit:
+            return content
+        return content[: limit - 3] + "..."
+
+
 class StreamingTrajectory:
     """
     Manages streaming trajectory output during RLM execution.
@@ -341,7 +445,7 @@ class StreamingTrajectory:
     Implements: Spec §6.6 Streaming Trajectory Visibility
     """
 
-    def __init__(self, renderer: TrajectoryRenderer):
+    def __init__(self, renderer: TrajectoryRenderer | RichTrajectoryRenderer):
         self.renderer = renderer
         self.events: list[TrajectoryEvent] = []
         self.subscribers: list[asyncio.Queue] = []
@@ -723,6 +827,7 @@ __all__ = [
     "TrajectoryEventType",
     "TrajectoryEvent",
     "TrajectoryRenderer",
+    "RichTrajectoryRenderer",
     "StreamingTrajectory",
     "TrajectoryStream",
     # Typed payloads (SPEC-12.08)
