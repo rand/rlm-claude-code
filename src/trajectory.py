@@ -8,9 +8,143 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
+
+
+# ============================================================================
+# Typed Payload Schemas (SPEC-12.08)
+# ============================================================================
+
+
+@dataclass
+class RLMStartPayload:
+    """Payload for RLM_START events."""
+
+    query: str
+    context_tokens: int
+    model: str | None = None
+    depth_budget: int | None = None
+
+
+@dataclass
+class RecursePayload:
+    """Payload for RECURSE_START/RECURSE_END events."""
+
+    query: str
+    depth: int
+    parent_id: str | None = None
+    spawn_repl: bool = True
+    tokens_used: int | None = None
+    execution_time_ms: float | None = None
+
+
+@dataclass
+class REPLExecPayload:
+    """Payload for REPL_EXEC events."""
+
+    code: str
+    function_calls: list[str] = field(default_factory=list)
+    code_length: int = 0
+
+    def __post_init__(self) -> None:
+        if self.code_length == 0:
+            self.code_length = len(self.code)
+
+
+@dataclass
+class REPLResultPayload:
+    """Payload for REPL_RESULT events."""
+
+    result: str
+    execution_time_ms: float = 0.0
+    memory_used_bytes: int = 0
+    functions_called: list[str] = field(default_factory=list)
+    truncated: bool = False
+
+
+@dataclass
+class ReasoningPayload:
+    """Payload for REASON events."""
+
+    reasoning: str
+    step_number: int | None = None
+    total_steps: int | None = None
+
+
+@dataclass
+class ErrorPayload:
+    """Payload for ERROR events."""
+
+    error_type: str
+    error_message: str
+    recoverable: bool = True
+    depth: int = 0
+    context: str | None = None
+
+
+@dataclass
+class FinalPayload:
+    """Payload for FINAL events."""
+
+    answer: str
+    confidence: float | None = None
+    sources: list[str] = field(default_factory=list)
+    tokens_used: int = 0
+    total_time_ms: float = 0.0
+
+
+@dataclass
+class ToolUsePayload:
+    """Payload for TOOL_USE events."""
+
+    tool: str
+    args: dict[str, Any] = field(default_factory=dict)
+    result: str | None = None
+    execution_time_ms: float | None = None
+
+
+@dataclass
+class CostPayload:
+    """Payload for COST_REPORT events."""
+
+    total_cost: float
+    input_tokens: int
+    output_tokens: int
+    model: str
+    budget_remaining: float | None = None
+
+
+@dataclass
+class BudgetAlertPayload:
+    """Payload for BUDGET_ALERT events."""
+
+    alert_type: str  # "warning", "exceeded", "model_downgrade"
+    budget_utilization: float
+    original_model: str | None = None
+    new_model: str | None = None
+    reason: str | None = None
+
+
+# Union type for all payloads
+TrajectoryPayload = (
+    RLMStartPayload
+    | RecursePayload
+    | REPLExecPayload
+    | REPLResultPayload
+    | ReasoningPayload
+    | ErrorPayload
+    | FinalPayload
+    | ToolUsePayload
+    | CostPayload
+    | BudgetAlertPayload
+)
+
+
+# ============================================================================
+# Core Event Types
+# ============================================================================
 
 
 class TrajectoryEventType(Enum):
@@ -41,7 +175,8 @@ class TrajectoryEvent:
         type: Event type from TrajectoryEventType enum
         depth: Recursion depth (0 = root, 1+ = sub-queries)
         content: Human-readable event description
-        metadata: Optional structured data for the event
+        metadata: Optional unstructured data (legacy, prefer typed_payload)
+        typed_payload: Strongly-typed payload for the event type (SPEC-12.08)
         timestamp: Unix timestamp (auto-generated if not provided)
 
     Example:
@@ -51,12 +186,16 @@ class TrajectoryEvent:
         ...     depth=0,
         ...     content="Starting RLM analysis"
         ... )
-        >>> # Or with metadata:
+        >>> # With typed payload:
+        >>> from src.trajectory import REPLExecPayload
         >>> event = TrajectoryEvent(
         ...     type=TrajectoryEventType.REPL_EXEC,
         ...     depth=1,
         ...     content="x = search(files, 'error')",
-        ...     metadata={"code_length": 25}
+        ...     typed_payload=REPLExecPayload(
+        ...         code="x = search(files, 'error')",
+        ...         function_calls=["search"]
+        ...     )
         ... )
     """
 
@@ -64,17 +203,24 @@ class TrajectoryEvent:
     depth: int
     content: str
     metadata: dict[str, Any] | None = None
+    typed_payload: TrajectoryPayload | None = None
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "type": self.type.value,
             "depth": self.depth,
             "content": self.content,
             "metadata": self.metadata,
             "timestamp": self.timestamp,
         }
+        if self.typed_payload is not None:
+            result["typed_payload"] = {
+                "payload_type": type(self.typed_payload).__name__,
+                **asdict(self.typed_payload),
+            }
+        return result
 
 
 class TrajectoryRenderer:
@@ -270,13 +416,25 @@ class TrajectoryStream:
         """Get all emitted events."""
         return self.streaming_trajectory.events
 
-    def emit_rlm_start(self, query: str, context_tokens: int) -> None:
+    def emit_rlm_start(
+        self,
+        query: str,
+        context_tokens: int,
+        model: str | None = None,
+        depth_budget: int | None = None,
+    ) -> None:
         """Emit RLM start event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.RLM_START,
             depth=0,
             content=f"Activating RLM mode for: {query[:100]}",
             metadata={"query": query, "context_tokens": context_tokens},
+            typed_payload=RLMStartPayload(
+                query=query,
+                context_tokens=context_tokens,
+                model=model,
+                depth_budget=depth_budget,
+            ),
         )
         asyncio.get_event_loop().run_until_complete(
             self.streaming_trajectory.emit(event)
@@ -287,6 +445,7 @@ class TrajectoryStream:
         depth: int,
         query: str,
         spawn_repl: bool,
+        parent_id: str | None = None,
     ) -> None:
         """Emit recursive call start event."""
         event = TrajectoryEvent(
@@ -294,6 +453,12 @@ class TrajectoryStream:
             depth=depth - 1,  # Parent depth
             content=f"Spawning sub-call: {query}",
             metadata={"spawn_repl": spawn_repl},
+            typed_payload=RecursePayload(
+                query=query,
+                depth=depth,
+                parent_id=parent_id,
+                spawn_repl=spawn_repl,
+            ),
         )
         self._emit_sync(event)
 
@@ -302,6 +467,7 @@ class TrajectoryStream:
         depth: int,
         tokens_used: int,
         execution_time_ms: float,
+        query: str = "",
     ) -> None:
         """Emit recursive call completion event."""
         event = TrajectoryEvent(
@@ -309,16 +475,28 @@ class TrajectoryStream:
             depth=depth - 1,
             content=f"Returned ({tokens_used} tokens, {execution_time_ms:.0f}ms)",
             metadata={"tokens_used": tokens_used, "execution_time_ms": execution_time_ms},
+            typed_payload=RecursePayload(
+                query=query,
+                depth=depth,
+                tokens_used=tokens_used,
+                execution_time_ms=execution_time_ms,
+            ),
         )
         self._emit_sync(event)
 
-    def emit_recursive_error(self, depth: int, error: str) -> None:
+    def emit_recursive_error(self, depth: int, error: str, recoverable: bool = True) -> None:
         """Emit recursive call error event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.ERROR,
             depth=depth - 1,
             content=f"Recursive call failed: {error}",
             metadata={"error": error},
+            typed_payload=ErrorPayload(
+                error_type="RecursionError",
+                error_message=error,
+                recoverable=recoverable,
+                depth=depth,
+            ),
         )
         self._emit_sync(event)
 
@@ -332,50 +510,113 @@ class TrajectoryStream:
         )
         self._emit_sync(event)
 
-    def emit_rlm_loop_complete(self, depth: int, tokens_used: int) -> None:
+    def emit_rlm_loop_complete(
+        self,
+        depth: int,
+        tokens_used: int,
+        answer: str = "",
+        confidence: float | None = None,
+        total_time_ms: float = 0.0,
+    ) -> None:
         """Emit RLM loop completion event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.FINAL,
             depth=depth,
             content=f"RLM loop complete ({tokens_used} tokens)",
             metadata={"tokens_used": tokens_used},
+            typed_payload=FinalPayload(
+                answer=answer[:500] if answer else "",  # Truncate for storage
+                confidence=confidence,
+                tokens_used=tokens_used,
+                total_time_ms=total_time_ms,
+            ),
         )
         self._emit_sync(event)
 
-    def emit_repl_execution(self, depth: int, code: str) -> None:
+    def emit_repl_execution(
+        self,
+        depth: int,
+        code: str,
+        function_calls: list[str] | None = None,
+    ) -> None:
         """Emit REPL code execution event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.REPL_EXEC,
             depth=depth,
             content=code,
+            typed_payload=REPLExecPayload(
+                code=code,
+                function_calls=function_calls or [],
+            ),
         )
         self._emit_sync(event)
 
-    def emit_repl_result(self, depth: int, result: str) -> None:
+    def emit_repl_result(
+        self,
+        depth: int,
+        result: str,
+        execution_time_ms: float = 0.0,
+        memory_used_bytes: int = 0,
+        functions_called: list[str] | None = None,
+        truncated: bool = False,
+    ) -> None:
         """Emit REPL result event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.REPL_RESULT,
             depth=depth,
             content=result,
+            typed_payload=REPLResultPayload(
+                result=result,
+                execution_time_ms=execution_time_ms,
+                memory_used_bytes=memory_used_bytes,
+                functions_called=functions_called or [],
+                truncated=truncated,
+            ),
         )
         self._emit_sync(event)
 
-    def emit_reasoning(self, depth: int, reasoning: str) -> None:
+    def emit_reasoning(
+        self,
+        depth: int,
+        reasoning: str,
+        step_number: int | None = None,
+        total_steps: int | None = None,
+    ) -> None:
         """Emit reasoning step event."""
         event = TrajectoryEvent(
             type=TrajectoryEventType.REASON,
             depth=depth,
             content=reasoning,
+            typed_payload=ReasoningPayload(
+                reasoning=reasoning,
+                step_number=step_number,
+                total_steps=total_steps,
+            ),
         )
         self._emit_sync(event)
 
-    def emit_tool_use(self, depth: int, tool: str, args: str) -> None:
+    def emit_tool_use(
+        self,
+        depth: int,
+        tool: str,
+        args: str | dict[str, Any],
+        result: str | None = None,
+        execution_time_ms: float | None = None,
+    ) -> None:
         """Emit tool use event."""
+        args_dict = args if isinstance(args, dict) else {"raw": args}
+        args_str = args if isinstance(args, str) else str(args)
         event = TrajectoryEvent(
             type=TrajectoryEventType.TOOL_USE,
             depth=depth,
-            content=f"{tool}: {args}",
-            metadata={"tool": tool, "args": args},
+            content=f"{tool}: {args_str}",
+            metadata={"tool": tool, "args": args_str},
+            typed_payload=ToolUsePayload(
+                tool=tool,
+                args=args_dict,
+                result=result,
+                execution_time_ms=execution_time_ms,
+            ),
         )
         self._emit_sync(event)
 
@@ -401,6 +642,65 @@ class TrajectoryStream:
                 "reason": reason,
                 "budget_utilization": budget_utilization,
             },
+            typed_payload=BudgetAlertPayload(
+                alert_type="model_downgrade",
+                budget_utilization=budget_utilization,
+                original_model=original_model,
+                new_model=new_model,
+                reason=reason,
+            ),
+        )
+        self._emit_sync(event)
+
+    def emit_error(
+        self,
+        depth: int,
+        error_type: str,
+        error_message: str,
+        recoverable: bool = True,
+        context: str | None = None,
+    ) -> None:
+        """Emit a general error event with typed payload."""
+        event = TrajectoryEvent(
+            type=TrajectoryEventType.ERROR,
+            depth=depth,
+            content=f"{error_type}: {error_message}",
+            metadata={"error_type": error_type, "error_message": error_message},
+            typed_payload=ErrorPayload(
+                error_type=error_type,
+                error_message=error_message,
+                recoverable=recoverable,
+                depth=depth,
+                context=context,
+            ),
+        )
+        self._emit_sync(event)
+
+    def emit_cost_report(
+        self,
+        total_cost: float,
+        input_tokens: int,
+        output_tokens: int,
+        model: str,
+        budget_remaining: float | None = None,
+    ) -> None:
+        """Emit cost report event with typed payload."""
+        event = TrajectoryEvent(
+            type=TrajectoryEventType.COST_REPORT,
+            depth=0,
+            content=f"Cost: ${total_cost:.4f} ({input_tokens}+{output_tokens} tokens)",
+            metadata={
+                "total_cost": total_cost,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
+            typed_payload=CostPayload(
+                total_cost=total_cost,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=model,
+                budget_remaining=budget_remaining,
+            ),
         )
         self._emit_sync(event)
 
@@ -419,9 +719,22 @@ class TrajectoryStream:
 
 
 __all__ = [
+    # Core types
     "TrajectoryEventType",
     "TrajectoryEvent",
     "TrajectoryRenderer",
     "StreamingTrajectory",
     "TrajectoryStream",
+    # Typed payloads (SPEC-12.08)
+    "TrajectoryPayload",
+    "RLMStartPayload",
+    "RecursePayload",
+    "REPLExecPayload",
+    "REPLResultPayload",
+    "ReasoningPayload",
+    "ErrorPayload",
+    "FinalPayload",
+    "ToolUsePayload",
+    "CostPayload",
+    "BudgetAlertPayload",
 ]
