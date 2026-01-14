@@ -89,6 +89,8 @@ class TaskComplexitySignals(BaseModel):
     asks_about_patterns: bool = False
     debugging_task: bool = False
     requires_exhaustive_search: bool = False  # "find all", "list every", etc.
+    security_review_task: bool = False  # security audit, code review, vulnerability scan
+    architecture_analysis: bool = False  # architecture, system design, refactoring
 
     # User intent signals
     user_wants_thorough: bool = False  # "make sure", "be careful", "thorough"

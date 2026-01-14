@@ -118,11 +118,31 @@ def extract_complexity_signals(prompt: str, context: SessionContext) -> TaskComp
     ]
 
     # Exhaustive search indicators - need systematic enumeration
+    # Use .* to allow words between key terms (e.g., "find and fix all")
     exhaustive_patterns = [
-        r"\b(find|list|show|get)\s+(all|every)\b",
-        r"\b(ensure|check|verify)\s+(all|every|each)\b",
+        r"\b(find|list|show|get)\b.*\b(all|every)\b",
+        r"\b(ensure|check|verify)\b.*\b(all|every|each)\b",
         r"\b(comprehensive|exhaustive|complete)\s+(list|search|scan|review)\b",
         r"\ball\s+(the\s+)?(places|instances|usages|occurrences|references)\b",
+        r"\b(fix|update|change|remove)\b.*\b(all|every|each)\b",
+    ]
+
+    # Security and review patterns - require careful multi-file analysis
+    security_review_patterns = [
+        r"\b(security|vulnerabilit|exploit|attack|injection|xss|csrf|auth)\w*\b",
+        r"\b(review|audit)\b.*\b(code|pr|pull\s*request|changes?|implementation)\b",
+        r"\b(code|pr|pull\s*request)\b.*\b(review|audit)\b",
+        r"\b(check|scan|analyze)\b.*\b(security|vulnerabil|risk)\b",
+    ]
+
+    # Architecture and design patterns - require system-wide understanding
+    architecture_patterns = [
+        r"\b(architecture|architect)\b",
+        r"\b(system|overall|high.?level)\s+(design|structure|overview)\b",
+        r"\b(summarize|explain|understand)\b.*\b(codebase|project|system|architecture)\b",
+        r"\b(how\s+does|how\s+do)\b.*\b(work|fit|connect|integrate)\b",
+        r"\b(design|structure)\s+(of|for)\s+(the|this)\b",
+        r"\b(refactor|restructure|reorganize)\b",
     ]
 
     # User intent: thorough mode signals
@@ -153,6 +173,8 @@ def extract_complexity_signals(prompt: str, context: SessionContext) -> TaskComp
         asks_about_patterns=any(re.search(p, prompt_lower) for p in pattern_patterns),
         debugging_task=any(re.search(p, prompt_lower) for p in debug_patterns),
         requires_exhaustive_search=any(re.search(p, prompt_lower) for p in exhaustive_patterns),
+        security_review_task=any(re.search(p, prompt_lower) for p in security_review_patterns),
+        architecture_analysis=any(re.search(p, prompt_lower) for p in architecture_patterns),
         user_wants_thorough=any(re.search(p, prompt_lower) for p in thorough_patterns),
         user_wants_fast=any(re.search(p, prompt_lower) for p in fast_patterns),
         context_has_multiple_domains=len(context.active_modules) > 2,
@@ -200,6 +222,12 @@ def should_activate_rlm(
     if signals.requires_exhaustive_search:
         # Exhaustive searches need systematic REPL-based enumeration
         return True, "exhaustive_search"
+    if signals.security_review_task:
+        # Security reviews require careful multi-file analysis
+        return True, "security_review"
+    if signals.architecture_analysis:
+        # Architecture analysis requires system-wide understanding
+        return True, "architecture_analysis"
     if signals.references_multiple_files and signals.files_span_multiple_modules:
         return True, "multi_module_task"
 

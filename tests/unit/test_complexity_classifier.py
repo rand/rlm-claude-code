@@ -145,7 +145,8 @@ class TestShouldActivateRlm:
     def test_activates_on_pattern_search_alone(self, mock_context):
         """Pattern search queries should activate RLM (score=2)."""
         # Use "search" without "all" to trigger pattern_search but not exhaustive_search
-        prompt = "Search for places where auth is used"
+        # Avoid "auth" which triggers security_review pattern
+        prompt = "Search for places where logging is used"
 
         should_activate, reason = should_activate_rlm(prompt, mock_context)
 
