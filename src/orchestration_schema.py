@@ -184,6 +184,10 @@ class OrchestrationPlan:
     estimated_latency_ms: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)  # For telemetry tracking
 
+    # === Memory-Augmented Orientation (SPEC-12.04) ===
+    memory_context: list[str] = field(default_factory=list)  # Relevant facts to inject
+    prior_strategy: str | None = None  # Strategy from successful past experience
+
     @property
     def total_token_budget(self) -> int:
         """Total tokens allowed across all depths."""
@@ -228,6 +232,8 @@ class OrchestrationPlan:
             "confidence": self.confidence,
             "signals": self.signals,
             "metadata": self.metadata,
+            "memory_context": self.memory_context,
+            "prior_strategy": self.prior_strategy,
         }
 
     @classmethod
@@ -339,6 +345,10 @@ class OrchestrationContext:
 
     # Complexity signals (from classifier)
     complexity_signals: dict[str, bool] = field(default_factory=dict)
+
+    # Memory-augmented context (pre-populated if memory store available)
+    memory_facts: list[str] = field(default_factory=list)  # Relevant facts from memory
+    memory_experiences: list[dict[str, Any]] = field(default_factory=list)  # Past experiences
 
     @property
     def remaining_depth(self) -> int:

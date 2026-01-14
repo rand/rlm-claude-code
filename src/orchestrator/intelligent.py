@@ -20,6 +20,7 @@ from typing import Any
 from ..api_client import ClaudeClient, init_client
 from ..complexity_classifier import should_activate_rlm
 from ..cost_tracker import CostComponent
+from ..memory_store import MemoryStore
 from ..orchestration_schema import (
     ExecutionMode,
     OrchestrationContext,
@@ -225,6 +226,7 @@ class IntelligentOrchestrator:
         config: OrchestratorConfig | None = None,
         available_models: list[str] | None = None,
         telemetry: Any | None = None,
+        memory_store: MemoryStore | None = None,
     ):
         """
         Initialize the intelligent orchestrator.
@@ -234,6 +236,7 @@ class IntelligentOrchestrator:
             config: Orchestrator configuration
             available_models: List of available model names
             telemetry: Optional OrchestrationTelemetry for heuristic tracking
+            memory_store: Optional MemoryStore for memory-augmented orientation
         """
         self._client = client
         self.config = config or OrchestratorConfig()
@@ -243,12 +246,14 @@ class IntelligentOrchestrator:
         self._local_orchestrator: Any = None  # Lazy initialized
         self._decision_logger: Any = None  # Lazy initialized
         self._telemetry = telemetry  # OrchestrationTelemetry for per-heuristic tracking
+        self._memory_store = memory_store  # For memory-augmented orientation (SPEC-12.04)
         self._stats = {
             "llm_decisions": 0,
             "local_decisions": 0,
             "fallback_decisions": 0,
             "cache_hits": 0,
             "errors": 0,
+            "memory_augmented": 0,
         }
 
     def _ensure_logger(self) -> Any:
@@ -289,6 +294,105 @@ class IntelligentOrchestrator:
             self._client = init_client()
         return self._client
 
+    def _query_memory_context(
+        self,
+        query: str,
+        limit: int = 5,
+    ) -> tuple[list[str], str | None]:
+        """
+        Query memory store for relevant context before classification.
+
+        Implements: SPEC-12.04 Memory-Augmented Orientation
+
+        Args:
+            query: The user query to find relevant context for
+            limit: Maximum number of facts to retrieve
+
+        Returns:
+            Tuple of (relevant_facts, prior_strategy)
+            - relevant_facts: List of fact content strings
+            - prior_strategy: Strategy from successful past experience, or None
+        """
+        if self._memory_store is None:
+            return [], None
+
+        relevant_facts: list[str] = []
+        prior_strategy: str | None = None
+
+        try:
+            # Search for relevant facts using BM25
+            search_results = self._memory_store.search(query, limit=limit)
+            for result in search_results:
+                if result.bm25_score > 0.5:  # Only high-relevance facts
+                    relevant_facts.append(result.content)
+
+            # Query for successful experiences with similar queries
+            experiences = self._memory_store.query_nodes(
+                node_type="experience",
+                tier="session",  # Prioritize recent session experiences
+                limit=3,
+            )
+            for exp in experiences:
+                # Check if experience was successful and has strategy metadata
+                if exp.metadata and exp.metadata.get("success"):
+                    strategy = exp.metadata.get("strategy")
+                    if strategy:
+                        prior_strategy = strategy
+                        break  # Use most recent successful strategy
+
+            self._stats["memory_augmented"] += 1
+
+        except Exception:
+            # Memory query failures should not block orchestration
+            pass
+
+        return relevant_facts, prior_strategy
+
+    def _adjust_plan_from_memory(
+        self,
+        plan: OrchestrationPlan,
+        memory_facts: list[str],
+        prior_strategy: str | None,
+    ) -> OrchestrationPlan:
+        """
+        Adjust orchestration plan based on memory context.
+
+        Implements: SPEC-12.04 Memory-Augmented Orientation
+
+        If we have high-confidence facts about the topic:
+        - Reduce depth budget (don't re-discover known facts)
+        - Increase confidence in the approach
+
+        If we have a successful prior strategy:
+        - Use that strategy as a starting point
+        - Potentially reduce exploration
+
+        Args:
+            plan: Original orchestration plan
+            memory_facts: Relevant facts from memory
+            prior_strategy: Strategy from successful past experience
+
+        Returns:
+            Adjusted OrchestrationPlan
+        """
+        # Store memory context in plan
+        plan.memory_context = memory_facts
+        plan.prior_strategy = prior_strategy
+
+        # If we have multiple relevant facts, we can reduce exploration depth
+        if len(memory_facts) >= 3:
+            # Reduce depth by 1 since we already have context
+            plan.depth_budget = max(1, plan.depth_budget - 1)
+            plan.signals.append("memory_context_available")
+
+        # If we have a prior successful strategy, boost confidence
+        if prior_strategy:
+            plan.confidence = min(1.0, plan.confidence + 0.15)
+            plan.signals.append("prior_strategy_found")
+            plan.metadata["prior_strategy"] = prior_strategy
+
+        return plan
+
     async def create_plan(
         self,
         query: str,
@@ -317,16 +421,20 @@ class IntelligentOrchestrator:
         else:
             orch_context = context
 
-        # Check forced overrides
+        # Query memory for context (SPEC-12.04 Memory-Augmented Orientation)
+        memory_facts, prior_strategy = self._query_memory_context(query)
+
+        # Check forced overrides (skip memory adjustment for bypass plans)
         if orch_context.forced_rlm is False:
             return OrchestrationPlan.bypass("user_forced_off")
 
         if orch_context.forced_mode is not None:
-            return OrchestrationPlan.from_mode(
+            plan = OrchestrationPlan.from_mode(
                 orch_context.forced_mode,
                 activation_reason="user_forced_mode",
                 available_models=self.available_models,
             )
+            return self._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
 
         # Check cache
         cache_key = self._compute_cache_key(query, orch_context)
@@ -347,6 +455,9 @@ class IntelligentOrchestrator:
 
                 # Log decision
                 self._log_decision(query, context_summary, plan, "local", latency_ms, orch_context)
+
+                # Apply memory adjustments
+                plan = self._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
 
                 # Cache the decision
                 if self.config.cache_enabled:
@@ -371,7 +482,7 @@ class IntelligentOrchestrator:
                             heuristics_triggered=plan.metadata.get("heuristics_triggered"),
                             heuristics_checked=plan.metadata.get("heuristics_checked"),
                         )
-                        return plan
+                        return self._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
                     raise RuntimeError(f"Local orchestration failed: {e}") from e
 
         # Try API-based orchestration
@@ -383,6 +494,9 @@ class IntelligentOrchestrator:
 
             # Log decision
             self._log_decision(query, context_summary, plan, "api", latency_ms, orch_context)
+
+            # Apply memory adjustments
+            plan = self._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
 
             # Cache the decision
             if self.config.cache_enabled:
@@ -407,7 +521,7 @@ class IntelligentOrchestrator:
                     heuristics_triggered=plan.metadata.get("heuristics_triggered"),
                     heuristics_checked=plan.metadata.get("heuristics_checked"),
                 )
-                return plan
+                return self._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
             else:
                 raise RuntimeError(f"Orchestration failed: {e}") from e
 
@@ -870,17 +984,71 @@ Output your decision as a JSON object."""
         else:
             mode = ExecutionMode.BALANCED
 
-        # Determine depth budget based on signals
+        # === Signal-Based Model Selection (SPEC-12.05) ===
+        # Override model tier based on specific signal types
+        model_tier: ModelTier | None = None
+        if "architectural" in high_value_signals:
+            # Architecture decisions need powerful reasoning
+            model_tier = ModelTier.POWERFUL
+            heuristics_triggered.append("model_tier_override:powerful")
+        elif "debugging_deep" in high_value_signals:
+            # Deep debugging benefits from balanced + deeper search
+            model_tier = ModelTier.BALANCED
+            heuristics_triggered.append("model_tier_override:balanced")
+        elif "pattern_exhaustion" in high_value_signals or "synthesis_required" in high_value_signals:
+            # Enumeration tasks can use faster models
+            model_tier = ModelTier.FAST
+            heuristics_triggered.append("model_tier_override:fast")
+
+        # === Context-Aware Depth (SPEC-12.05) ===
+        # Adjust depth based on context size and signals
+        base_depth = 1
         if "debugging_deep" in high_value_signals or "architectural" in high_value_signals:
-            depth_budget = 3
+            base_depth = 3
         elif (
             "synthesis_required" in high_value_signals
             or "pattern_exhaustion" in high_value_signals
             or "discovery_required" in high_value_signals
         ):
-            depth_budget = 2
-        else:
-            depth_budget = 1
+            base_depth = 2
+
+        # Large context (many files/tokens) → increase depth for better decomposition
+        if context.context_tokens > 100_000:
+            base_depth = min(3, base_depth + 1)
+            heuristics_triggered.append("depth_adjust:large_context")
+        elif context.context_tokens > 50_000:
+            # Moderate context, slight depth increase
+            base_depth = min(3, base_depth + 1) if base_depth < 2 else base_depth
+
+        # Prior confusion → increase depth for recovery
+        if context.complexity_signals.get("previous_turn_was_confused"):
+            base_depth = min(3, base_depth + 1)
+            heuristics_triggered.append("depth_adjust:prior_confusion")
+
+        depth_budget = base_depth
+
+        # === Tool Access Inference (SPEC-12.05) ===
+        # Infer appropriate tool access from query keywords
+        tool_access: ToolAccessLevel | None = None
+
+        # Check for write intent
+        write_patterns = [
+            r"\b(fix|update|modify|change|add|remove|delete|refactor|rename)\b",
+            r"\b(create|write|implement|build)\b",
+        ]
+        if any(re.search(p, query_lower) for p in write_patterns):
+            tool_access = ToolAccessLevel.FULL
+            heuristics_triggered.append("tool_access:full")
+
+        # Check for read-only intent (lower priority than write)
+        elif re.search(r"\b(read|view|show|explain|understand|analyze|find|search|look)\b", query_lower):
+            tool_access = ToolAccessLevel.READ_ONLY
+            heuristics_triggered.append("tool_access:read_only")
+
+        # Check for pure reasoning (no file access needed)
+        elif re.search(r"\b(what\s+is|how\s+to|best\s+practice|syntax|concept)\b", query_lower):
+            tool_access = ToolAccessLevel.REPL_ONLY
+            heuristics_triggered.append("tool_access:repl_only")
 
         # Determine primary reason
         if high_value_signals:
@@ -896,8 +1064,18 @@ Output your decision as a JSON object."""
             available_models=self.available_models,
         )
 
-        # Override depth if we computed a specific one
-        plan.depth_budget = min(depth_budget, plan.depth_budget + 1)
+        # Apply signal-based overrides
+        if model_tier is not None:
+            plan.model_tier = model_tier
+            plan.primary_model = self._select_model(model_tier)
+            plan.fallback_chain = self._get_fallbacks(model_tier, plan.primary_model)
+
+        # Apply computed depth
+        plan.depth_budget = depth_budget
+
+        # Apply inferred tool access
+        if tool_access is not None:
+            plan.tool_access = tool_access
 
         # Add all signals
         plan.complexity_score = classification.complexity
@@ -953,6 +1131,7 @@ async def create_orchestration_plan(
     context: SessionContext | OrchestrationContext,
     client: ClaudeClient | None = None,
     use_llm: bool = True,
+    memory_store: MemoryStore | None = None,
 ) -> OrchestrationPlan:
     """
     Create an orchestration plan for a query.
@@ -962,6 +1141,7 @@ async def create_orchestration_plan(
         context: Session or orchestration context
         client: Optional Claude client
         use_llm: Whether to use LLM-based orchestration
+        memory_store: Optional MemoryStore for memory-augmented orientation
 
     Returns:
         OrchestrationPlan
@@ -969,8 +1149,8 @@ async def create_orchestration_plan(
     config = OrchestratorConfig(use_fallback=True)
 
     if not use_llm:
-        # Use heuristics only
-        orchestrator = IntelligentOrchestrator(config=config)
+        # Use heuristics only (still supports memory augmentation)
+        orchestrator = IntelligentOrchestrator(config=config, memory_store=memory_store)
         if isinstance(context, SessionContext):
             orch_context = OrchestrationContext(
                 query=query,
@@ -978,9 +1158,14 @@ async def create_orchestration_plan(
             )
         else:
             orch_context = context
-        return orchestrator._heuristic_orchestrate(query, orch_context)
+        # Query memory and apply adjustments for heuristic mode too
+        memory_facts, prior_strategy = orchestrator._query_memory_context(query)
+        plan = orchestrator._heuristic_orchestrate(query, orch_context)
+        return orchestrator._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
 
-    orchestrator = IntelligentOrchestrator(client=client, config=config)
+    orchestrator = IntelligentOrchestrator(
+        client=client, config=config, memory_store=memory_store
+    )
     return await orchestrator.create_plan(query, context)
 
 
