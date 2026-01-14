@@ -73,7 +73,7 @@ class RLMOrchestrator:
     def _ensure_client(self) -> ClaudeClient:
         """Ensure we have an API client."""
         if self.client is None:
-            self.client = init_client(default_model=self.config.model.root_model)
+            self.client = init_client(default_model=self.config.models.root_model)
         return self.client
 
     def _get_router(self, client: ClaudeClient) -> SmartRouter:
