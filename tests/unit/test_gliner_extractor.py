@@ -384,14 +384,16 @@ class TestHotSwapping:
 
     def test_reload_model_resets_state(self):
         """reload_model resets internal state."""
-        extractor = GLiNERExtractor()
+        # Use a non-existent local path to prevent HuggingFace download
+        config = GLiNERConfig(model_path="/nonexistent/path/to/model")
+        extractor = GLiNERExtractor(config=config)
         # Simulate a loaded state
         extractor._model = "mock_model"
         extractor._loaded = True
         extractor._load_attempted = True
         extractor._model_mtime = 12345.0
 
-        # Reload (will fail since no model exists at default path)
+        # Reload (will fail since model path doesn't exist)
         result = extractor.reload_model()
 
         # State should be reset
@@ -400,7 +402,7 @@ class TestHotSwapping:
         # load_attempted should be True since _try_load was called
         assert extractor._load_attempted is True
         assert extractor._model_mtime is None
-        # Result should be False since no model exists locally
+        # Result should be False since model path doesn't exist
         assert result is False
 
     def test_initial_model_mtime_is_none(self):

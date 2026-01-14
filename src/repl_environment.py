@@ -537,7 +537,8 @@ class RLMEnvironment:
             obj_type = self._extract_object_type(error_msg)
             if obj_type:
                 suggestions.append(f"Check available methods with dir({obj_type})")
-            suggestions.append("Common helpers: peek(), search(), llm(), map_reduce()")
+            helpers = self._get_available_helpers()
+            suggestions.append(f"Common helpers: {', '.join(f'{h}()' for h in helpers[:4])}")
 
         elif isinstance(error, TypeError):
             suggestions.append("Check function signature and argument types")
@@ -581,10 +582,21 @@ class RLMEnvironment:
         similar.sort(reverse=True)
         return [name for _, name in similar]
 
+    def _get_available_helpers(self) -> list[str]:
+        """Get helper functions available at current access level."""
+        # Core helpers always available
+        helpers = ["peek", "search", "find_relevant"]
+
+        # LLM-based helpers only in standard/full modes (not micro)
+        if self.access_level != "micro":
+            helpers.extend(["llm", "summarize", "map_reduce", "llm_batch"])
+
+        return helpers
+
     def _list_available_names(self) -> str:
         """List commonly available names in the environment."""
         names = ["files", "conversation", "tool_outputs", "working_memory"]
-        names.extend(["peek", "search", "llm", "map_reduce", "find_relevant"])
+        names.extend(self._get_available_helpers())
         wm_keys = list(self.globals.get("working_memory", {}).keys())[:5]
         if wm_keys:
             names.extend(wm_keys)
