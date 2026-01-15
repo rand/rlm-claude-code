@@ -940,3 +940,176 @@ class TestEvidenceDependenceREPL:
         assert "Question: Test question?" in op.context
         assert "Answer: Test answer" in op.context
         assert "Evidence: Test evidence" in op.context
+
+
+class TestAuditReasoningREPL:
+    """Tests for audit_reasoning REPL function (SPEC-16.03)."""
+
+    @pytest.fixture
+    def env(self, basic_context):
+        """Create a REPL environment."""
+        return RLMEnvironment(basic_context, use_restricted=False)
+
+    @pytest.fixture
+    def micro_env(self, basic_context):
+        """Create a micro mode environment."""
+        return create_micro_environment(basic_context, use_restricted=False)
+
+    def test_audit_reasoning_available_in_standard_mode(self, env):
+        """SPEC-16.03: audit_reasoning is available in standard mode."""
+        assert "audit_reasoning" in env.globals
+        assert callable(env.globals["audit_reasoning"])
+
+    def test_audit_reasoning_not_available_in_micro_mode(self, micro_env):
+        """audit_reasoning is NOT available in micro mode."""
+        assert "audit_reasoning" not in micro_env.globals
+
+    def test_audit_reasoning_returns_deferred_operation(self, env):
+        """audit_reasoning returns a DeferredOperation."""
+        from src.types import DeferredOperation
+
+        steps = [
+            {"claim": "The function returns 42", "cites": ["src1"]},
+        ]
+        sources = {"src1": "def func(): return 42"}
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert isinstance(op, DeferredOperation)
+        assert op.operation_type == "audit_reasoning"
+
+    def test_audit_reasoning_with_multiple_steps(self, env):
+        """audit_reasoning handles multiple reasoning steps."""
+        steps = [
+            {"claim": "Step 1 claim", "cites": ["src1"]},
+            {"claim": "Step 2 claim", "cites": ["src2"]},
+            {"claim": "Step 3 claim", "cites": ["src1", "src2"]},
+        ]
+        sources = {
+            "src1": "Source 1 content",
+            "src2": "Source 2 content",
+        }
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert op.metadata["step_count"] == 3
+        assert len(op.metadata["steps"]) == 3
+
+    def test_audit_reasoning_stores_steps_in_metadata(self, env):
+        """audit_reasoning stores validated steps in metadata."""
+        steps = [
+            {"claim": "Test claim", "cites": ["s1", "s2"]},
+        ]
+        sources = {"s1": "Source 1", "s2": "Source 2"}
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert op.metadata["steps"][0]["claim"] == "Test claim"
+        assert op.metadata["steps"][0]["cites"] == ["s1", "s2"]
+
+    def test_audit_reasoning_stores_sources_in_metadata(self, env):
+        """audit_reasoning stores sources in metadata."""
+        steps = [{"claim": "claim", "cites": ["src"]}]
+        sources = {"src": "The source content"}
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert op.metadata["sources"] == sources
+
+    def test_audit_reasoning_formats_sources_in_context(self, env):
+        """audit_reasoning formats all sources in context string."""
+        steps = [{"claim": "claim", "cites": ["s1"]}]
+        sources = {
+            "s1": "Content of source 1",
+            "s2": "Content of source 2",
+        }
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert "[s1]" in op.context
+        assert "[s2]" in op.context
+        assert "Content of source 1" in op.context
+        assert "Content of source 2" in op.context
+
+    def test_audit_reasoning_creates_pending_operation(self, env):
+        """audit_reasoning adds operation to pending operations."""
+        assert env.has_pending_operations() is False
+
+        env._audit_reasoning(
+            [{"claim": "c", "cites": ["s"]}],
+            {"s": "source"},
+        )
+
+        assert env.has_pending_operations() is True
+        ops, _ = env.get_pending_operations()
+        assert len(ops) == 1
+        assert ops[0].operation_type == "audit_reasoning"
+
+    def test_audit_reasoning_via_repl_execution(self, env):
+        """audit_reasoning can be called from REPL code."""
+        result = env.execute("""
+steps = [{"claim": "Test claim", "cites": ["src"]}]
+sources = {"src": "Test source"}
+op = audit_reasoning(steps, sources)
+""")
+
+        assert result.success is True
+        assert env.has_pending_operations() is True
+
+    def test_audit_reasoning_unique_operation_ids(self, env):
+        """Each audit_reasoning gets a unique operation ID."""
+        op1 = env._audit_reasoning([{"claim": "c1", "cites": []}], {})
+        op2 = env._audit_reasoning([{"claim": "c2", "cites": []}], {})
+
+        assert op1.operation_id != op2.operation_id
+        assert "audit_" in op1.operation_id
+        assert "audit_" in op2.operation_id
+
+    def test_audit_reasoning_validates_step_structure(self, env):
+        """audit_reasoning validates that steps have required fields."""
+        # Missing 'claim' key should raise ValueError
+        with pytest.raises(ValueError, match="missing required 'claim' key"):
+            env._audit_reasoning([{"cites": ["s"]}], {"s": "source"})
+
+    def test_audit_reasoning_validates_step_type(self, env):
+        """audit_reasoning validates that steps are dicts."""
+        with pytest.raises(TypeError, match="must be a dict"):
+            env._audit_reasoning(["not a dict"], {})
+
+    def test_audit_reasoning_handles_empty_cites(self, env):
+        """audit_reasoning handles steps with no citations."""
+        steps = [{"claim": "An uncited claim"}]
+        sources = {}
+
+        op = env._audit_reasoning(steps, sources)
+
+        assert op.metadata["steps"][0]["cites"] == []
+
+    def test_audit_reasoning_normalizes_single_cite_to_list(self, env):
+        """audit_reasoning converts single cite value to list."""
+        steps = [{"claim": "claim", "cites": "single_source"}]
+        sources = {"single_source": "content"}
+
+        op = env._audit_reasoning(steps, sources)
+
+        # Should be normalized to a list
+        assert op.metadata["steps"][0]["cites"] == ["single_source"]
+
+    def test_audit_reasoning_query_includes_step_count(self, env):
+        """audit_reasoning query mentions the number of steps."""
+        steps = [
+            {"claim": "claim1", "cites": []},
+            {"claim": "claim2", "cites": []},
+        ]
+
+        op = env._audit_reasoning(steps, {})
+
+        assert "2 reasoning steps" in op.query
+
+    def test_audit_reasoning_empty_steps(self, env):
+        """audit_reasoning handles empty steps list."""
+        op = env._audit_reasoning([], {})
+
+        assert op.metadata["step_count"] == 0
+        assert op.metadata["steps"] == []
+        assert "0 reasoning steps" in op.query

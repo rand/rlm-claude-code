@@ -49,6 +49,7 @@ MICRO_MODE_BLOCKED = frozenset(
         "find_relevant",  # Can use LLM scoring
         "verify_claim",  # Uses LLM for verification
         "evidence_dependence",  # Uses LLM for consistency checking
+        "audit_reasoning",  # Uses LLM for reasoning trace verification
     }
 )
 
@@ -286,6 +287,7 @@ class RLMEnvironment:
             # Epistemic verification functions (SPEC-16)
             self.globals["verify_claim"] = self._verify_claim
             self.globals["evidence_dependence"] = self._evidence_dependence
+            self.globals["audit_reasoning"] = self._audit_reasoning
 
     def _summarize_local(self, var: Any, max_chars: int = 500) -> str:
         """
@@ -632,7 +634,7 @@ class RLMEnvironment:
         if self.access_level != "micro":
             helpers.extend(["llm", "summarize", "map_reduce", "llm_batch"])
             # Epistemic verification helpers (SPEC-16)
-            helpers.extend(["verify_claim", "evidence_dependence"])
+            helpers.extend(["verify_claim", "evidence_dependence", "audit_reasoning"])
 
         return helpers
 
@@ -1300,6 +1302,82 @@ class RLMEnvironment:
         )
         # Store components in metadata for orchestrator
         op.metadata = {"question": question, "answer": answer, "evidence": evidence}
+        self.pending_operations.append(op)
+        return op
+
+    def _audit_reasoning(
+        self,
+        steps: list[dict[str, Any]],
+        sources: dict[str, str],
+    ) -> DeferredOperation:
+        """
+        Audit a reasoning trace for epistemic validity.
+
+        Implements: Spec SPEC-16.03
+
+        Verifies that each step in a reasoning trace properly cites its sources
+        and that the claims are supported by the cited evidence.
+
+        Args:
+            steps: List of reasoning steps, each with:
+                - "claim": The claim being made in this step
+                - "cites": List of source span_ids supporting the claim
+            sources: Dict mapping span_id -> content for all available sources
+
+        Returns:
+            DeferredOperation that will resolve to list of ClaimVerification,
+            one for each step in the reasoning trace:
+            - evidence_support: How well the cited sources support the claim
+            - evidence_dependence: Whether the claim relies on the evidence
+            - is_flagged: Whether the step is flagged for review
+            - flag_reason: Why it was flagged (if applicable)
+
+        Example:
+            steps = [
+                {"claim": "The function returns 42", "cites": ["src1"]},
+                {"claim": "This matches the specification", "cites": ["src2"]},
+            ]
+            sources = {
+                "src1": "def func(): return 42",
+                "src2": "Spec: Function should return 42",
+            }
+            results = audit_reasoning(steps, sources)
+        """
+        self._operation_counter += 1
+        op_id = f"audit_{self._operation_counter}"
+
+        # Validate input structure
+        validated_steps = []
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                raise TypeError(f"Step {i} must be a dict, got {type(step).__name__}")
+            if "claim" not in step:
+                raise ValueError(f"Step {i} missing required 'claim' key")
+            claim = str(step.get("claim", ""))
+            cites = step.get("cites", [])
+            if not isinstance(cites, list):
+                cites = [str(cites)]
+            validated_steps.append({"claim": claim, "cites": cites})
+
+        # Build context string with all sources
+        sources_str = "\n\n".join(f"[{k}]:\n{v}" for k, v in sources.items())
+
+        # Build query that describes the audit task
+        query = f"Audit {len(validated_steps)} reasoning steps against provided sources"
+
+        op = DeferredOperation(
+            operation_id=op_id,
+            operation_type="audit_reasoning",
+            query=query,
+            context=sources_str,
+            spawn_repl=False,
+        )
+        # Store structured data in metadata for orchestrator
+        op.metadata = {
+            "steps": validated_steps,
+            "sources": sources,
+            "step_count": len(validated_steps),
+        }
         self.pending_operations.append(op)
         return op
 
