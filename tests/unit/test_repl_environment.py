@@ -4,22 +4,21 @@ Unit tests for repl_environment module.
 Implements: Spec §4 tests
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.types import Message, MessageRole, SessionContext, ToolOutput
 from src.repl_environment import (
+    ALLOWED_SUBPROCESSES,
     RLMEnvironment,
     RLMSecurityError,
-    ALLOWED_SUBPROCESSES,
-    MICRO_MODE_FUNCTIONS,
-    MICRO_MODE_BLOCKED,
     create_micro_environment,
 )
+from src.types import Message, MessageRole, SessionContext, ToolOutput
 
 
 @pytest.fixture
@@ -390,6 +389,7 @@ class TestRLMEnvironmentSecurity:
         """Tool not found is handled gracefully."""
         # Add a fake tool to allowed list for testing
         from src import repl_environment
+
         original = repl_environment.ALLOWED_SUBPROCESSES
         repl_environment.ALLOWED_SUBPROCESSES = frozenset({"nonexistent_tool"})
 
@@ -454,11 +454,13 @@ class TestDeferredOperations:
         """llm_batch returns a DeferredBatch for parallel processing."""
         from src.types import DeferredBatch
 
-        batch = basic_env._llm_batch([
-            ("Query 1", "context 1"),
-            ("Query 2", "context 2"),
-            ("Query 3", "context 3"),
-        ])
+        batch = basic_env._llm_batch(
+            [
+                ("Query 1", "context 1"),
+                ("Query 2", "context 2"),
+                ("Query 3", "context 3"),
+            ]
+        )
 
         assert isinstance(batch, DeferredBatch)
         assert len(batch.operations) == 3
@@ -498,10 +500,12 @@ class TestDeferredOperations:
 
     def test_resolve_batch(self, basic_env):
         """resolve_batch resolves all operations in a batch."""
-        batch = basic_env._llm_batch([
-            ("Query 1", "ctx1"),
-            ("Query 2", "ctx2"),
-        ])
+        batch = basic_env._llm_batch(
+            [
+                ("Query 1", "ctx1"),
+                ("Query 2", "ctx2"),
+            ]
+        )
 
         basic_env.resolve_batch(batch.batch_id, ["Answer 1", "Answer 2"])
 
@@ -570,6 +574,7 @@ class TestMicroMode:
     def micro_env(self, basic_context):
         """Create a micro mode REPL environment."""
         from src.repl_environment import create_micro_environment
+
         return create_micro_environment(basic_context, use_restricted=False)
 
     def test_micro_mode_has_peek(self, micro_env):
@@ -738,3 +743,200 @@ class TestAccessLevels:
         assert env.access_level == "standard"
         assert "llm" in env.globals
         assert "run_tool" in env.globals
+
+
+# ============================================================================
+# Epistemic Verification REPL Functions (SPEC-16)
+# ============================================================================
+
+
+class TestVerifyClaimREPL:
+    """Tests for verify_claim REPL function (SPEC-16.02)."""
+
+    @pytest.fixture
+    def env(self, basic_context):
+        """Create a REPL environment."""
+        return RLMEnvironment(basic_context, use_restricted=False)
+
+    @pytest.fixture
+    def micro_env(self, basic_context):
+        """Create a micro mode environment."""
+        return create_micro_environment(basic_context, use_restricted=False)
+
+    def test_verify_claim_available_in_standard_mode(self, env):
+        """SPEC-16.02: verify_claim is available in standard mode."""
+        assert "verify_claim" in env.globals
+        assert callable(env.globals["verify_claim"])
+
+    def test_verify_claim_not_available_in_micro_mode(self, micro_env):
+        """verify_claim is NOT available in micro mode."""
+        assert "verify_claim" not in micro_env.globals
+
+    def test_verify_claim_returns_deferred_operation(self, env):
+        """verify_claim returns a DeferredOperation."""
+        from src.types import DeferredOperation
+
+        op = env._verify_claim(
+            claim="The function returns 42",
+            evidence="def func(): return 42",
+        )
+
+        assert isinstance(op, DeferredOperation)
+        assert op.operation_type == "verify_claim"
+        assert "The function returns 42" in op.query
+
+    def test_verify_claim_with_string_evidence(self, env):
+        """verify_claim accepts string evidence."""
+        op = env._verify_claim(
+            claim="X is Y",
+            evidence="X equals Y in all cases",
+        )
+
+        assert "X equals Y" in op.context
+
+    def test_verify_claim_with_dict_evidence(self, env):
+        """verify_claim accepts dict evidence and formats it."""
+        op = env._verify_claim(
+            claim="The module has tests",
+            evidence={
+                "test_file.py": "def test_something(): pass",
+                "main.py": "def main(): pass",
+            },
+        )
+
+        assert "[test_file.py]" in op.context
+        assert "[main.py]" in op.context
+        assert "def test_something" in op.context
+
+    def test_verify_claim_stores_threshold_in_metadata(self, env):
+        """verify_claim stores threshold in operation metadata."""
+        op = env._verify_claim(
+            claim="Test claim",
+            evidence="Test evidence",
+            threshold=0.8,
+        )
+
+        assert op.metadata["threshold"] == 0.8
+
+    def test_verify_claim_default_threshold(self, env):
+        """verify_claim uses default threshold of 0.7."""
+        op = env._verify_claim(
+            claim="Test claim",
+            evidence="Test evidence",
+        )
+
+        assert op.metadata["threshold"] == 0.7
+
+    def test_verify_claim_creates_pending_operation(self, env):
+        """verify_claim adds operation to pending operations."""
+        assert env.has_pending_operations() is False
+
+        env._verify_claim("claim", "evidence")
+
+        assert env.has_pending_operations() is True
+        ops, _ = env.get_pending_operations()
+        assert len(ops) == 1
+        assert ops[0].operation_type == "verify_claim"
+
+    def test_verify_claim_via_repl_execution(self, env):
+        """verify_claim can be called from REPL code."""
+        result = env.execute("op = verify_claim('The function returns 42', 'def f(): return 42')")
+
+        assert result.success is True
+        assert env.has_pending_operations() is True
+
+    def test_verify_claim_unique_operation_ids(self, env):
+        """Each verify_claim gets a unique operation ID."""
+        op1 = env._verify_claim("claim 1", "evidence 1")
+        op2 = env._verify_claim("claim 2", "evidence 2")
+
+        assert op1.operation_id != op2.operation_id
+        assert "verify_" in op1.operation_id
+        assert "verify_" in op2.operation_id
+
+
+class TestEvidenceDependenceREPL:
+    """Tests for evidence_dependence REPL function (SPEC-16.04)."""
+
+    @pytest.fixture
+    def env(self, basic_context):
+        """Create a REPL environment."""
+        return RLMEnvironment(basic_context, use_restricted=False)
+
+    @pytest.fixture
+    def micro_env(self, basic_context):
+        """Create a micro mode environment."""
+        return create_micro_environment(basic_context, use_restricted=False)
+
+    def test_evidence_dependence_available_in_standard_mode(self, env):
+        """SPEC-16.04: evidence_dependence is available in standard mode."""
+        assert "evidence_dependence" in env.globals
+        assert callable(env.globals["evidence_dependence"])
+
+    def test_evidence_dependence_not_available_in_micro_mode(self, micro_env):
+        """evidence_dependence is NOT available in micro mode."""
+        assert "evidence_dependence" not in micro_env.globals
+
+    def test_evidence_dependence_returns_deferred_operation(self, env):
+        """evidence_dependence returns a DeferredOperation."""
+        from src.types import DeferredOperation
+
+        op = env._evidence_dependence(
+            question="What color is the widget?",
+            answer="The widget is blue.",
+            evidence="According to the spec, widgets are blue.",
+        )
+
+        assert isinstance(op, DeferredOperation)
+        assert op.operation_type == "evidence_dependence"
+
+    def test_evidence_dependence_stores_components_in_metadata(self, env):
+        """evidence_dependence stores question, answer, evidence in metadata."""
+        op = env._evidence_dependence(
+            question="What is X?",
+            answer="X is Y",
+            evidence="The document says X equals Y",
+        )
+
+        assert op.metadata["question"] == "What is X?"
+        assert op.metadata["answer"] == "X is Y"
+        assert op.metadata["evidence"] == "The document says X equals Y"
+
+    def test_evidence_dependence_creates_pending_operation(self, env):
+        """evidence_dependence adds operation to pending operations."""
+        assert env.has_pending_operations() is False
+
+        env._evidence_dependence("Q", "A", "E")
+
+        assert env.has_pending_operations() is True
+        ops, _ = env.get_pending_operations()
+        assert len(ops) == 1
+        assert ops[0].operation_type == "evidence_dependence"
+
+    def test_evidence_dependence_via_repl_execution(self, env):
+        """evidence_dependence can be called from REPL code."""
+        result = env.execute("op = evidence_dependence('What is X?', 'X is Y', 'Evidence about X')")
+
+        assert result.success is True
+        assert env.has_pending_operations() is True
+
+    def test_evidence_dependence_unique_operation_ids(self, env):
+        """Each evidence_dependence gets a unique operation ID."""
+        op1 = env._evidence_dependence("Q1", "A1", "E1")
+        op2 = env._evidence_dependence("Q2", "A2", "E2")
+
+        assert op1.operation_id != op2.operation_id
+        assert "dep_" in op1.operation_id
+        assert "dep_" in op2.operation_id
+
+    def test_evidence_dependence_context_format(self, env):
+        """evidence_dependence formats context with all components."""
+        op = env._evidence_dependence(
+            question="Test question?",
+            answer="Test answer",
+            evidence="Test evidence",
+        )
+
+        assert "Question: Test question?" in op.context
+        assert "Answer: Test answer" in op.context
+        assert "Evidence: Test evidence" in op.context

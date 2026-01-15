@@ -27,24 +27,30 @@ from .types import DeferredBatch, DeferredOperation, ExecutionResult, SessionCon
 REPLAccessLevel = Literal["micro", "standard", "full"]
 
 # Functions available in micro mode (SPEC-14.03, SPEC-14.52)
-MICRO_MODE_FUNCTIONS = frozenset({
-    "peek",
-    "search",
-    "summarize_local",
-    "memory_query",
-    "memory_add_fact",  # SPEC-14.52: Micro mode can store insights
-})
+MICRO_MODE_FUNCTIONS = frozenset(
+    {
+        "peek",
+        "search",
+        "summarize_local",
+        "memory_query",
+        "memory_add_fact",  # SPEC-14.52: Micro mode can store insights
+    }
+)
 
 # Functions NOT available in micro mode (SPEC-14.04)
-MICRO_MODE_BLOCKED = frozenset({
-    "llm",
-    "recursive_llm",
-    "recursive_query",
-    "llm_batch",
-    "summarize",  # Uses LLM
-    "map_reduce",
-    "find_relevant",  # Can use LLM scoring
-})
+MICRO_MODE_BLOCKED = frozenset(
+    {
+        "llm",
+        "recursive_llm",
+        "recursive_query",
+        "llm_batch",
+        "summarize",  # Uses LLM
+        "map_reduce",
+        "find_relevant",  # Can use LLM scoring
+        "verify_claim",  # Uses LLM for verification
+        "evidence_dependence",  # Uses LLM for consistency checking
+    }
+)
 
 if TYPE_CHECKING:
     from .memory_store import MemoryStore
@@ -277,6 +283,9 @@ class RLMEnvironment:
             self.globals["extract_functions"] = self._extract_functions
             # Safe subprocess execution (standard and full modes)
             self.globals["run_tool"] = self._run_tool
+            # Epistemic verification functions (SPEC-16)
+            self.globals["verify_claim"] = self._verify_claim
+            self.globals["evidence_dependence"] = self._evidence_dependence
 
     def _summarize_local(self, var: Any, max_chars: int = 500) -> str:
         """
@@ -622,6 +631,8 @@ class RLMEnvironment:
         # LLM-based helpers only in standard/full modes (not micro)
         if self.access_level != "micro":
             helpers.extend(["llm", "summarize", "map_reduce", "llm_batch"])
+            # Epistemic verification helpers (SPEC-16)
+            helpers.extend(["verify_claim", "evidence_dependence"])
 
         return helpers
 
@@ -1186,6 +1197,112 @@ class RLMEnvironment:
 
             return len(lines)
 
+    def _verify_claim(
+        self,
+        claim: str,
+        evidence: str | dict[str, str],
+        threshold: float = 0.7,
+    ) -> DeferredOperation:
+        """
+        Verify a claim against provided evidence.
+
+        Implements: Spec SPEC-16.02
+
+        Uses epistemic verification to check if a claim is supported by evidence:
+        - Evidence support: Does the evidence support the claim?
+        - Evidence dependence: Would the answer change without evidence?
+        - Consistency: Is the claim internally consistent?
+
+        Args:
+            claim: The claim to verify
+            evidence: Evidence to verify against (string or dict of evidence_id -> content)
+            threshold: Support threshold for flagging (default 0.7)
+
+        Returns:
+            DeferredOperation that will resolve to ClaimVerification with:
+            - evidence_support: Score from evidence auditing (0.0-1.0)
+            - evidence_dependence: Score from consistency checking (0.0-1.0)
+            - consistency_score: Internal consistency score (0.0-1.0)
+            - is_flagged: Whether the claim is flagged for review
+            - flag_reason: Reason for flagging (if applicable)
+
+        Example:
+            result = verify_claim(
+                "The function returns 42",
+                "def func(): return 42",
+                threshold=0.7
+            )
+        """
+        self._operation_counter += 1
+        op_id = f"verify_{self._operation_counter}"
+
+        # Normalize evidence to string
+        if isinstance(evidence, dict):
+            evidence_str = "\n\n".join(f"[{k}]:\n{v}" for k, v in evidence.items())
+        else:
+            evidence_str = str(evidence)
+
+        op = DeferredOperation(
+            operation_id=op_id,
+            operation_type="verify_claim",
+            query=claim,
+            context=evidence_str,
+            spawn_repl=False,
+        )
+        # Store threshold in metadata for orchestrator
+        op.metadata = {"threshold": threshold, "claim": claim, "evidence": evidence_str}
+        self.pending_operations.append(op)
+        return op
+
+    def _evidence_dependence(
+        self,
+        question: str,
+        answer: str,
+        evidence: str,
+    ) -> DeferredOperation:
+        """
+        Compute how much an answer depends on the given evidence.
+
+        Implements: Spec SPEC-16.04
+
+        Uses consistency checking to determine if the answer would change
+        significantly without the evidence (evidence scrubbing technique).
+
+        Args:
+            question: The question that was answered
+            answer: The answer to evaluate
+            evidence: The evidence the answer should depend on
+
+        Returns:
+            DeferredOperation that will resolve to float (0.0-1.0):
+            - 0.0 = answer independent of evidence (potential hallucination)
+            - 1.0 = answer fully dependent on evidence (good evidence use)
+
+        Example:
+            dependence = evidence_dependence(
+                "What color is the widget?",
+                "The widget is blue.",
+                "According to the spec, widgets are blue."
+            )
+        """
+        self._operation_counter += 1
+        op_id = f"dep_{self._operation_counter}"
+
+        # Combine question, answer, and evidence for context
+        context = f"Question: {question}\n\nAnswer: {answer}\n\nEvidence: {evidence}"
+
+        op = DeferredOperation(
+            operation_id=op_id,
+            operation_type="evidence_dependence",
+            query=question,
+            context=context,
+            spawn_repl=False,
+        )
+        # Store components in metadata for orchestrator
+        op.metadata = {"question": question, "answer": answer, "evidence": evidence}
+        self.pending_operations.append(op)
+        return op
+
     def has_pending_operations(self) -> bool:
         """Check if there are pending async operations to process."""
         return bool(self.pending_operations) or bool(self.pending_batches)
@@ -1531,9 +1648,7 @@ class RLMEnvironment:
         import copy as copy_module
 
         return {
-            "working_memory": copy_module.deepcopy(
-                self.globals.get("working_memory", {})
-            ),
+            "working_memory": copy_module.deepcopy(self.globals.get("working_memory", {})),
             "locals": list(self.locals.keys()),
             "history_length": len(self.history),
         }
@@ -1555,9 +1670,7 @@ class RLMEnvironment:
 
         # Restore working memory
         if "working_memory" in state:
-            self.globals["working_memory"] = copy_module.deepcopy(
-                state["working_memory"]
-            )
+            self.globals["working_memory"] = copy_module.deepcopy(state["working_memory"])
 
         # Clear locals (can't safely restore arbitrary objects)
         self.locals.clear()

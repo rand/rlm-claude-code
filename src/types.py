@@ -220,12 +220,15 @@ class DeferredOperation:
     """
 
     operation_id: str
-    operation_type: str  # "recursive_query", "summarize", "llm_batch"
+    operation_type: (
+        str  # "recursive_query", "summarize", "llm_batch", "verify_claim", "evidence_dependence"
+    )
     query: str
     context: Any = None
     spawn_repl: bool = False
     resolved: bool = False
     result: Any = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         """Return placeholder string that can be detected in output."""
