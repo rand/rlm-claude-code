@@ -1537,3 +1537,242 @@ class TestClaimDecisionType:
         assert node2.claim_text == "Second claim"
         assert node2.evidence_ids == ["b", "c"]
         assert node2.verification_status == "flagged"
+
+
+class TestVerificationDecisionType:
+    """Tests for verification decision type (SPEC-16.12)."""
+
+    def test_verification_in_valid_decision_types(self):
+        """Verification is a valid decision type."""
+        from src.reasoning_traces import VALID_DECISION_TYPES
+
+        assert "verification" in VALID_DECISION_TYPES
+
+    def test_create_verification_basic(self, reasoning_traces):
+        """Can create a basic verification node."""
+        # First create a claim to verify
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+        )
+
+        assert verification_id is not None
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert node is not None
+        assert node.decision_type == "verification"
+        assert node.verified_claim_id == claim_id
+        assert node.support_score == 0.8
+        assert node.dependence_score == 0.7
+        assert node.consistency_score == 1.0  # default
+        assert node.is_flagged is False
+
+    def test_create_verification_with_all_scores(self, reasoning_traces):
+        """Can create a verification with all scores."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.9,
+            dependence_score=0.6,
+            consistency_score=0.85,
+        )
+
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert node.support_score == 0.9
+        assert node.dependence_score == 0.6
+        assert node.consistency_score == 0.85
+
+    def test_create_verification_flagged(self, reasoning_traces):
+        """Can create a flagged verification."""
+        claim_id = reasoning_traces.create_claim(claim_text="Suspicious claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.2,
+            dependence_score=0.1,
+            is_flagged=True,
+            flag_reason="low_dependence",
+        )
+
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert node.is_flagged is True
+        assert node.flag_reason == "low_dependence"
+        assert "flagged" in node.content
+        assert "low_dependence" in node.content
+
+    def test_create_verification_all_flag_reasons(self, reasoning_traces):
+        """Can create verifications with all valid flag reasons."""
+        valid_reasons = [
+            "unsupported",
+            "phantom_citation",
+            "low_dependence",
+            "contradiction",
+            "over_extrapolation",
+            "confidence_mismatch",
+        ]
+
+        for reason in valid_reasons:
+            claim_id = reasoning_traces.create_claim(claim_text=f"Claim for {reason}")
+            verification_id = reasoning_traces.create_verification(
+                claim_id=claim_id,
+                support_score=0.3,
+                dependence_score=0.2,
+                is_flagged=True,
+                flag_reason=reason,
+            )
+            node = reasoning_traces.get_decision_node(verification_id)
+            assert node.flag_reason == reason
+
+    def test_create_verification_invalid_flag_reason_raises(self, reasoning_traces):
+        """Invalid flag_reason raises ValueError."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        with pytest.raises(ValueError, match="Invalid flag_reason"):
+            reasoning_traces.create_verification(
+                claim_id=claim_id,
+                support_score=0.5,
+                dependence_score=0.5,
+                flag_reason="invalid_reason",
+            )
+
+    def test_create_verification_score_out_of_range_raises(self, reasoning_traces):
+        """Out-of-range scores raise ValueError."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        # support_score > 1.0
+        with pytest.raises(ValueError, match="support_score"):
+            reasoning_traces.create_verification(
+                claim_id=claim_id,
+                support_score=1.5,
+                dependence_score=0.5,
+            )
+
+        # dependence_score < 0.0
+        with pytest.raises(ValueError, match="dependence_score"):
+            reasoning_traces.create_verification(
+                claim_id=claim_id,
+                support_score=0.5,
+                dependence_score=-0.1,
+            )
+
+        # consistency_score > 1.0
+        with pytest.raises(ValueError, match="consistency_score"):
+            reasoning_traces.create_verification(
+                claim_id=claim_id,
+                support_score=0.5,
+                dependence_score=0.5,
+                consistency_score=2.0,
+            )
+
+    def test_create_verification_with_confidence(self, reasoning_traces):
+        """Can create a verification with custom confidence."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+            confidence=0.95,
+        )
+
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert node.confidence == 0.95
+
+    def test_create_verification_with_parent(self, reasoning_traces):
+        """Can create a verification with a parent decision."""
+        parent_id = reasoning_traces.create_goal(content="Verify claims")
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+            parent_id=parent_id,
+        )
+
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert node.parent_id == parent_id
+
+    def test_verification_creates_edge_to_claim(self, reasoning_traces):
+        """Verification creates an edge linking to the claim."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+        )
+
+        # Check that the edge exists for the verification node
+        edges = reasoning_traces.store.get_edges_for_node(verification_id)
+        assert len(edges) >= 1
+
+        # Find the verifies edge
+        verifies_edges = [e for e in edges if e.label == "verifies"]
+        assert len(verifies_edges) == 1
+
+        # Also check that the claim has an edge
+        claim_edges = reasoning_traces.store.get_edges_for_node(claim_id)
+        claim_verifies_edges = [e for e in claim_edges if e.label == "verifies"]
+        assert len(claim_verifies_edges) == 1
+
+        # Both should reference the same edge
+        assert verifies_edges[0].id == claim_verifies_edges[0].id
+
+    def test_verification_content_format(self, reasoning_traces):
+        """Verification content contains formatted scores."""
+        claim_id = reasoning_traces.create_claim(claim_text="Test claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.85,
+            dependence_score=0.72,
+            consistency_score=0.90,
+        )
+
+        node = reasoning_traces.get_decision_node(verification_id)
+        assert "support=0.85" in node.content
+        assert "dependence=0.72" in node.content
+        assert "consistency=0.90" in node.content
+        assert "verified" in node.content
+
+    def test_decision_node_verification_fields_default(self, reasoning_traces):
+        """DecisionNode has default values for verification fields."""
+        # Create a non-verification decision
+        goal_id = reasoning_traces.create_goal(content="Test goal")
+        node = reasoning_traces.get_decision_node(goal_id)
+
+        # Verification fields should be None/False/default
+        assert node.verified_claim_id is None
+        assert node.support_score is None
+        assert node.dependence_score is None
+        assert node.consistency_score is None
+        assert node.is_flagged is False
+        assert node.flag_reason is None
+
+    def test_multiple_verifications_for_same_claim(self, reasoning_traces):
+        """Can create multiple verifications for the same claim."""
+        claim_id = reasoning_traces.create_claim(claim_text="Re-verified claim")
+
+        v1_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.6,
+            dependence_score=0.5,
+        )
+
+        v2_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+        )
+
+        node1 = reasoning_traces.get_decision_node(v1_id)
+        node2 = reasoning_traces.get_decision_node(v2_id)
+
+        assert node1.verified_claim_id == claim_id
+        assert node2.verified_claim_id == claim_id
+        assert node1.support_score == 0.6
+        assert node2.support_score == 0.8

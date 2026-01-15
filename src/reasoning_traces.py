@@ -30,7 +30,7 @@ class DecisionNode:
     """
 
     id: str
-    decision_type: str  # goal, decision, option, action, outcome, observation, claim
+    decision_type: str  # goal, decision, option, action, outcome, observation, claim, verification
     content: str
     confidence: float = 0.5
     prompt: str | None = None
@@ -42,6 +42,13 @@ class DecisionNode:
     claim_text: str | None = None  # The actual claim being verified
     evidence_ids: list[str] = field(default_factory=list)  # Evidence source IDs
     verification_status: str | None = None  # pending, verified, flagged, refuted
+    # Verification-specific fields (SPEC-16.12)
+    verified_claim_id: str | None = None  # ID of the claim being verified
+    support_score: float | None = None  # How well evidence supports claim (0.0-1.0)
+    dependence_score: float | None = None  # How much answer changed without evidence (0.0-1.0)
+    consistency_score: float | None = None  # Semantic consistency across variations (0.0-1.0)
+    is_flagged: bool = False  # Whether this verification requires attention
+    flag_reason: str | None = None  # Reason for flagging
 
 
 @dataclass
@@ -100,7 +107,7 @@ DECISIONS_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS decisions (
     node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
     decision_type TEXT NOT NULL CHECK(decision_type IN
-        ('goal', 'decision', 'option', 'action', 'outcome', 'observation', 'claim')),
+        ('goal', 'decision', 'option', 'action', 'outcome', 'observation', 'claim', 'verification')),
     confidence REAL DEFAULT 0.5,
     prompt TEXT,
     files JSON DEFAULT '[]',
@@ -111,13 +118,22 @@ CREATE TABLE IF NOT EXISTS decisions (
     claim_text TEXT,  -- The actual claim text being verified
     evidence_ids JSON DEFAULT '[]',  -- List of evidence source IDs
     verification_status TEXT CHECK(verification_status IS NULL OR verification_status IN
-        ('pending', 'verified', 'flagged', 'refuted'))
+        ('pending', 'verified', 'flagged', 'refuted')),
+    -- Verification-specific fields (SPEC-16.12)
+    verified_claim_id TEXT REFERENCES decisions(node_id),  -- Links to claim being verified
+    support_score REAL CHECK(support_score IS NULL OR (support_score >= 0.0 AND support_score <= 1.0)),
+    dependence_score REAL CHECK(dependence_score IS NULL OR (dependence_score >= 0.0 AND dependence_score <= 1.0)),
+    consistency_score REAL CHECK(consistency_score IS NULL OR (consistency_score >= 0.0 AND consistency_score <= 1.0)),
+    is_flagged INTEGER DEFAULT 0,  -- Boolean: 0=false, 1=true
+    flag_reason TEXT CHECK(flag_reason IS NULL OR flag_reason IN
+        ('unsupported', 'phantom_citation', 'low_dependence', 'contradiction', 'over_extrapolation', 'confidence_mismatch'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_type ON decisions(decision_type);
 CREATE INDEX IF NOT EXISTS idx_decisions_parent ON decisions(parent_id);
 CREATE INDEX IF NOT EXISTS idx_decisions_commit ON decisions(commit_hash);
 CREATE INDEX IF NOT EXISTS idx_decisions_verification ON decisions(verification_status);
+CREATE INDEX IF NOT EXISTS idx_decisions_verified_claim ON decisions(verified_claim_id);
 """
 
 
@@ -134,6 +150,7 @@ VALID_DECISION_TYPES = frozenset(
         "outcome",
         "observation",
         "claim",  # SPEC-16.11: Epistemic verification claim
+        "verification",  # SPEC-16.12: Epistemic verification result
     }
 )
 
@@ -494,6 +511,96 @@ class ReasoningTraces:
             self.store.update_node(claim_id, confidence=confidence)
 
         return self._update_decision(claim_id, **updates)
+
+    def create_verification(
+        self,
+        claim_id: str,
+        support_score: float,
+        dependence_score: float,
+        consistency_score: float = 1.0,
+        is_flagged: bool = False,
+        flag_reason: str | None = None,
+        confidence: float = 0.5,
+        parent_id: str | None = None,
+    ) -> str:
+        """
+        Create a verification node for an epistemic claim.
+
+        Implements: Spec SPEC-16.12
+
+        Args:
+            claim_id: ID of the claim being verified
+            support_score: How well evidence supports claim (0.0-1.0)
+            dependence_score: How much answer changed without evidence (0.0-1.0)
+            consistency_score: Semantic consistency across variations (0.0-1.0)
+            is_flagged: Whether this verification flags a potential issue
+            flag_reason: Reason for flagging (if flagged)
+            confidence: Confidence in the verification result (0.0-1.0)
+            parent_id: Optional parent decision ID
+
+        Returns:
+            Node ID of the created verification
+
+        Raises:
+            ValueError: If scores are out of range or flag_reason is invalid
+        """
+        # Validate score ranges
+        for name, value in [
+            ("support_score", support_score),
+            ("dependence_score", dependence_score),
+            ("consistency_score", consistency_score),
+        ]:
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0.0 and 1.0, got {value}")
+
+        # Validate flag_reason if provided
+        valid_flag_reasons = {
+            "unsupported",
+            "phantom_citation",
+            "low_dependence",
+            "contradiction",
+            "over_extrapolation",
+            "confidence_mismatch",
+        }
+        if flag_reason is not None and flag_reason not in valid_flag_reasons:
+            raise ValueError(
+                f"Invalid flag_reason: {flag_reason}. "
+                f"Must be one of: {valid_flag_reasons}"
+            )
+
+        # Generate verification content/summary
+        status = "flagged" if is_flagged else "verified"
+        content = (
+            f"Verification ({status}): support={support_score:.2f}, "
+            f"dependence={dependence_score:.2f}, consistency={consistency_score:.2f}"
+        )
+        if flag_reason:
+            content += f" [reason: {flag_reason}]"
+
+        verification_id = self._create_decision_node(
+            decision_type="verification",
+            content=content,
+            verified_claim_id=claim_id,
+            support_score=support_score,
+            dependence_score=dependence_score,
+            consistency_score=consistency_score,
+            is_flagged=is_flagged,
+            flag_reason=flag_reason,
+            confidence=confidence,
+            parent_id=parent_id,
+        )
+
+        # Create edge linking verification to claim (verifies relationship)
+        self.store.create_edge(
+            edge_type="relation",
+            label="verifies",
+            members=[
+                {"node_id": verification_id, "role": "subject", "position": 0},
+                {"node_id": claim_id, "role": "object", "position": 1},
+            ],
+        )
+
+        return verification_id
 
     def link_observation(self, observation_id: str, decision_id: str) -> None:
         """
@@ -1373,6 +1480,13 @@ class ReasoningTraces:
         claim_text: str | None = None,
         evidence_ids: list[str] | None = None,
         verification_status: str | None = None,
+        # Verification-specific fields (SPEC-16.12)
+        verified_claim_id: str | None = None,
+        support_score: float | None = None,
+        dependence_score: float | None = None,
+        consistency_score: float | None = None,
+        is_flagged: bool = False,
+        flag_reason: str | None = None,
     ) -> str:
         """Create a decision node in both nodes and decisions tables."""
         import sqlite3
@@ -1388,6 +1502,14 @@ class ReasoningTraces:
             metadata["claim_text"] = claim_text
             metadata["evidence_ids"] = evidence_ids or []
             metadata["verification_status"] = verification_status
+        # Add verification-specific metadata if this is a verification
+        elif decision_type == "verification":
+            metadata["verified_claim_id"] = verified_claim_id
+            metadata["support_score"] = support_score
+            metadata["dependence_score"] = dependence_score
+            metadata["consistency_score"] = consistency_score
+            metadata["is_flagged"] = is_flagged
+            metadata["flag_reason"] = flag_reason
 
         node_id = self.store.create_node(
             node_type="decision",
@@ -1405,9 +1527,11 @@ class ReasoningTraces:
                 INSERT INTO decisions (
                     node_id, decision_type, confidence, prompt, files,
                     branch, commit_hash, parent_id,
-                    claim_text, evidence_ids, verification_status
+                    claim_text, evidence_ids, verification_status,
+                    verified_claim_id, support_score, dependence_score,
+                    consistency_score, is_flagged, flag_reason
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     node_id,
@@ -1421,6 +1545,12 @@ class ReasoningTraces:
                     claim_text,
                     json.dumps(evidence_ids or []),
                     verification_status,
+                    verified_claim_id,
+                    support_score,
+                    dependence_score,
+                    consistency_score,
+                    1 if is_flagged else 0,
+                    flag_reason,
                 ),
             )
             conn.commit()
@@ -1490,6 +1620,13 @@ class ReasoningTraces:
             claim_text=row["claim_text"],
             evidence_ids=evidence_ids or [],
             verification_status=row["verification_status"],
+            # Verification-specific fields (SPEC-16.12)
+            verified_claim_id=row["verified_claim_id"],
+            support_score=row["support_score"],
+            dependence_score=row["dependence_score"],
+            consistency_score=row["consistency_score"],
+            is_flagged=bool(row["is_flagged"]),
+            flag_reason=row["flag_reason"],
         )
 
 
