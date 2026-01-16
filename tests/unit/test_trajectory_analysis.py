@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from src.trajectory import TrajectoryEvent, TrajectoryEventType
+from src.trajectory import TrajectoryEvent, TrajectoryEventType, VerificationPayload
 from src.trajectory_analysis import (
     StrategyAnalysis,
     StrategySignal,
@@ -378,3 +378,192 @@ class TestStrategyAnalysis:
         assert d["strategy_confidence"] == 0.9
         assert d["success"] is True
         assert d["effectiveness_score"] == 0.75
+
+
+class TestVerificationMetrics:
+    """Tests for verification metrics extraction (SPEC-16.36)."""
+
+    @pytest.fixture
+    def analyzer(self):
+        """Create analyzer."""
+        return TrajectoryAnalyzer()
+
+    def test_verification_metrics_defaults(self):
+        """Default verification metrics are zero."""
+        metrics = TrajectoryMetrics()
+
+        assert metrics.verification_count == 0
+        assert metrics.verified_claims == 0
+        assert metrics.flagged_claims == 0
+        assert metrics.verification_retries == 0
+        assert metrics.avg_verification_confidence == 0.0
+
+    def test_extract_verification_event_with_payload(self, analyzer):
+        """Extracts verification metrics from typed payload."""
+        events = [
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content="Verified 8/10 claims",
+                typed_payload=VerificationPayload(
+                    claims_total=10,
+                    claims_verified=8,
+                    claims_flagged=2,
+                    confidence=0.85,
+                    flagged_claim_ids=["c1", "c5"],
+                    retry_count=1,
+                ),
+            ),
+        ]
+
+        analysis = analyzer.analyze(events)
+
+        assert analysis.metrics.verification_count == 1
+        assert analysis.metrics.verified_claims == 8
+        assert analysis.metrics.flagged_claims == 2
+        assert analysis.metrics.verification_retries == 1
+        assert analysis.metrics.avg_verification_confidence == 0.85
+
+    def test_extract_verification_event_with_metadata(self, analyzer):
+        """Extracts verification metrics from metadata fallback."""
+        events = [
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content="Verified 5/5 claims",
+                metadata={
+                    "claims_verified": 5,
+                    "claims_flagged": 0,
+                    "confidence": 0.95,
+                },
+            ),
+        ]
+
+        analysis = analyzer.analyze(events)
+
+        assert analysis.metrics.verification_count == 1
+        assert analysis.metrics.verified_claims == 5
+        assert analysis.metrics.flagged_claims == 0
+        assert analysis.metrics.avg_verification_confidence == 0.95
+
+    def test_multiple_verification_events(self, analyzer):
+        """Aggregates multiple verification events."""
+        events = [
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content="First verification",
+                typed_payload=VerificationPayload(
+                    claims_total=5,
+                    claims_verified=4,
+                    claims_flagged=1,
+                    confidence=0.80,
+                    retry_count=0,
+                ),
+            ),
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=1,
+                content="Second verification",
+                typed_payload=VerificationPayload(
+                    claims_total=3,
+                    claims_verified=3,
+                    claims_flagged=0,
+                    confidence=0.90,
+                    retry_count=1,
+                ),
+            ),
+        ]
+
+        analysis = analyzer.analyze(events)
+
+        assert analysis.metrics.verification_count == 2
+        assert analysis.metrics.verified_claims == 7  # 4 + 3
+        assert analysis.metrics.flagged_claims == 1  # 1 + 0
+        assert analysis.metrics.verification_retries == 1  # 0 + 1
+        assert analysis.metrics.avg_verification_confidence == pytest.approx(0.85)  # (0.80 + 0.90) / 2
+
+    def test_verification_metrics_in_to_dict(self, analyzer):
+        """Verification metrics appear in to_dict output."""
+        events = [
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content="Verified",
+                typed_payload=VerificationPayload(
+                    claims_total=10,
+                    claims_verified=9,
+                    claims_flagged=1,
+                    confidence=0.92,
+                    retry_count=2,
+                ),
+            ),
+        ]
+
+        analysis = analyzer.analyze(events)
+        d = analysis.to_dict()
+
+        assert d["metrics"]["verification_count"] == 1
+        assert d["metrics"]["verified_claims"] == 9
+        assert d["metrics"]["flagged_claims"] == 1
+        assert d["metrics"]["verification_retries"] == 2
+        assert d["metrics"]["avg_verification_confidence"] == 0.92
+
+    def test_mixed_events_with_verification(self, analyzer):
+        """Verification events work alongside other event types."""
+        now = time.time()
+        events = [
+            TrajectoryEvent(
+                type=TrajectoryEventType.RLM_START,
+                depth=0,
+                content="Starting",
+                timestamp=now,
+            ),
+            TrajectoryEvent(
+                type=TrajectoryEventType.REPL_EXEC,
+                depth=0,
+                content="code = peek(files)",
+                timestamp=now + 0.1,
+            ),
+            TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content="Verified claims",
+                typed_payload=VerificationPayload(
+                    claims_total=3,
+                    claims_verified=2,
+                    claims_flagged=1,
+                    confidence=0.75,
+                ),
+                timestamp=now + 0.2,
+            ),
+            TrajectoryEvent(
+                type=TrajectoryEventType.FINAL,
+                depth=0,
+                content="Answer",
+                timestamp=now + 0.3,
+            ),
+        ]
+
+        analysis = analyzer.analyze(events)
+
+        assert analysis.metrics.total_events == 4
+        assert analysis.metrics.repl_executions == 1
+        assert analysis.metrics.verification_count == 1
+        assert analysis.metrics.verified_claims == 2
+        assert analysis.metrics.flagged_claims == 1
+        assert analysis.metrics.completed is True
+
+    def test_no_verification_events(self, analyzer):
+        """Trajectories without verification events have zero verification metrics."""
+        events = [
+            TrajectoryEvent(type=TrajectoryEventType.REPL_EXEC, depth=0, content="code"),
+            TrajectoryEvent(type=TrajectoryEventType.FINAL, depth=0, content="Answer"),
+        ]
+
+        analysis = analyzer.analyze(events)
+
+        assert analysis.metrics.verification_count == 0
+        assert analysis.metrics.verified_claims == 0
+        assert analysis.metrics.flagged_claims == 0
+        assert analysis.metrics.avg_verification_confidence == 0.0

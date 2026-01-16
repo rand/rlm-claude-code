@@ -434,3 +434,196 @@ class TestPanelRendering:
         captured = capsys.readouterr()
         assert "ValueError" in captured.out
         assert "Invalid input" in captured.out
+
+
+# ============================================================================
+# Verification Output Tests (SPEC-16.34)
+# ============================================================================
+
+
+class TestVerificationOutput:
+    """Test verification output functionality."""
+
+    def test_verify_symbol_exists(self) -> None:
+        """VERIFY symbol should exist."""
+        assert Symbol.VERIFY.value == "⊙"
+
+    def test_verify_symbol_has_color(self) -> None:
+        """VERIFY symbol should have color mapping."""
+        assert Symbol.VERIFY in SYMBOL_COLORS
+        assert SYMBOL_COLORS[Symbol.VERIFY] == Color.VERIFY
+
+    def test_emit_verification_all_passed(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """emit_verification shows all claims passed."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification(
+            claims_total=10,
+            claims_verified=10,
+            claims_flagged=0,
+            confidence=0.95,
+        )
+
+        captured = capsys.readouterr()
+        assert Symbol.VERIFY.value in captured.out
+        assert "Verified" in captured.out
+        assert "10/10" in captured.out
+        assert "95%" in captured.out
+
+    def test_emit_verification_with_flagged(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """emit_verification shows flagged claims count."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification(
+            claims_total=10,
+            claims_verified=8,
+            claims_flagged=2,
+            confidence=0.80,
+        )
+
+        captured = capsys.readouterr()
+        assert "8/10" in captured.out
+        assert "2 flagged" in captured.out
+
+    def test_emit_verification_quiet_mode(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """emit_verification suppressed in quiet mode."""
+        config = OutputConfig(colors=False, verbosity="quiet")
+        console = RLMConsole(config)
+        console.emit_verification(
+            claims_total=10,
+            claims_verified=10,
+            claims_flagged=0,
+            confidence=0.95,
+        )
+
+        captured = capsys.readouterr()
+        assert captured.out.strip() == ""
+
+    def test_emit_verification_report_basic(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """emit_verification_report shows panel output."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification_report(
+            claims_total=5,
+            claims_verified=5,
+            claims_flagged=0,
+            confidence=0.90,
+        )
+
+        captured = capsys.readouterr()
+        assert "Verification Report" in captured.out
+        assert "Claims:" in captured.out
+        assert "5 total" in captured.out
+        assert "5 verified" in captured.out
+        assert "Confidence:" in captured.out
+
+    def test_emit_verification_report_with_flagged_claims(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """emit_verification_report shows flagged claims details."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification_report(
+            claims_total=5,
+            claims_verified=3,
+            claims_flagged=2,
+            confidence=0.70,
+            flagged_claims=[
+                ("c1", "The API returns XML", "unsupported"),
+                ("c2", "The function is pure", "contradicted"),
+            ],
+        )
+
+        captured = capsys.readouterr()
+        assert "Flagged Claims:" in captured.out
+        assert "[c1]" in captured.out
+        assert "unsupported" in captured.out
+
+    def test_emit_verification_report_with_gaps(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """emit_verification_report shows evidence gaps."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification_report(
+            claims_total=5,
+            claims_verified=4,
+            claims_flagged=1,
+            confidence=0.75,
+            gaps=[
+                ("partial_support", "Claim goes beyond evidence"),
+                ("phantom_citation", "Referenced section not found"),
+            ],
+        )
+
+        captured = capsys.readouterr()
+        assert "Evidence Gaps:" in captured.out
+        assert "partial_support" in captured.out
+
+    def test_emit_verification_report_truncates_long_lists(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """emit_verification_report truncates lists beyond limit."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.emit_verification_report(
+            claims_total=10,
+            claims_verified=2,
+            claims_flagged=8,
+            confidence=0.30,
+            flagged_claims=[
+                (f"c{i}", f"Claim {i} text", "reason") for i in range(10)
+            ],
+        )
+
+        captured = capsys.readouterr()
+        assert "... and 5 more" in captured.out
+
+    def test_emit_flagged_claim(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """emit_flagged_claim shows individual claim details."""
+        config = OutputConfig(colors=False, verbosity="verbose")
+        console = RLMConsole(config)
+        console.emit_flagged_claim(
+            claim_id="c1",
+            claim_text="The function returns JSON",
+            reason="unsupported",
+            suggestion="Provide supporting evidence",
+        )
+
+        captured = capsys.readouterr()
+        assert "[c1]" in captured.out
+        assert "function returns JSON" in captured.out
+        assert "unsupported" in captured.out
+        assert "Suggestion:" in captured.out
+
+    def test_emit_flagged_claim_hidden_in_normal_mode(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """emit_flagged_claim suppressed in normal verbosity."""
+        config = OutputConfig(colors=False, verbosity="normal")
+        console = RLMConsole(config)
+        console.emit_flagged_claim(
+            claim_id="c1",
+            claim_text="The function returns JSON",
+            reason="unsupported",
+        )
+
+        captured = capsys.readouterr()
+        assert captured.out.strip() == ""
+
+    def test_emit_flagged_claim_truncates_long_text(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """emit_flagged_claim truncates very long claim text."""
+        config = OutputConfig(colors=False, verbosity="verbose")
+        console = RLMConsole(config)
+        long_claim = "x" * 100
+        console.emit_flagged_claim(
+            claim_id="c1",
+            claim_text=long_claim,
+            reason="unsupported",
+        )
+
+        captured = capsys.readouterr()
+        assert "..." in captured.out  # Truncated
+        assert "x" * 100 not in captured.out

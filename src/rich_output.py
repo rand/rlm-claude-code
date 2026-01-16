@@ -48,6 +48,7 @@ class Symbol(str, Enum):
     SUCCESS = "✓"  # Success/complete
     ERROR = "✗"  # Error/failure
     WARNING = "⚠"  # Warning/caution
+    VERIFY = "⊙"  # Verification checkpoint (SPEC-16.34)
 
     # Auxiliary
     BUDGET = "≡"  # Cost/budget report
@@ -82,6 +83,7 @@ class Color(str, Enum):
     BUDGET = "white"
     MEMORY = "cyan"
     LEAN = "dark_cyan"
+    VERIFY = "bright_blue"  # SPEC-16.34
     DIM = "dim"
 
 
@@ -98,6 +100,7 @@ SYMBOL_COLORS: dict[Symbol, Color] = {
     Symbol.BUDGET: Color.BUDGET,
     Symbol.MEMORY: Color.MEMORY,
     Symbol.LEAN: Color.LEAN,
+    Symbol.VERIFY: Color.VERIFY,  # SPEC-16.34
     Symbol.CONTINUE: Color.DIM,
     Symbol.BRANCH: Color.DIM,
     Symbol.LAST: Color.DIM,
@@ -520,6 +523,175 @@ class RLMConsole:
             text.append(f", {execution_time_ms:.0f}ms", style=Color.DIM.value)
 
         text.append(")", style=Color.DIM.value)
+        self.console.print(text)
+
+    # -------------------------------------------------------------------------
+    # Verification Output (SPEC-16.34)
+    # -------------------------------------------------------------------------
+
+    def emit_verification(
+        self,
+        claims_total: int,
+        claims_verified: int,
+        claims_flagged: int,
+        confidence: float,
+        depth: int = 0,
+    ) -> None:
+        """
+        Emit verification checkpoint event.
+
+        SPEC-16.34: Rich output for verification results.
+
+        Args:
+            claims_total: Total claims checked
+            claims_verified: Claims that passed verification
+            claims_flagged: Claims that failed verification
+            confidence: Overall confidence score (0.0-1.0)
+            depth: Current recursion depth
+        """
+        if not self._should_emit("normal"):
+            return
+
+        text = self._format_prefix(depth)
+        text.append(f"{Symbol.VERIFY.value} ", style=f"bold {Color.VERIFY.value}")
+        text.append("Verified: ", style="bold")
+
+        # Color based on results
+        if claims_flagged == 0:
+            result_style = Color.SUCCESS.value
+        elif claims_flagged < claims_total / 2:
+            result_style = Color.WARNING.value
+        else:
+            result_style = Color.ERROR.value
+
+        text.append(f"{claims_verified}/{claims_total}", style=result_style)
+        text.append(f" ({confidence:.0%} confidence)", style=Color.DIM.value)
+
+        if claims_flagged > 0:
+            text.append(f" [{claims_flagged} flagged]", style=Color.WARNING.value)
+
+        self.console.print(text)
+
+    def emit_verification_report(
+        self,
+        claims_total: int,
+        claims_verified: int,
+        claims_flagged: int,
+        confidence: float,
+        flagged_claims: list[tuple[str, str, str]] | None = None,
+        gaps: list[tuple[str, str]] | None = None,
+    ) -> None:
+        """
+        Emit a full verification report panel.
+
+        SPEC-16.34: Rich panel output for verification reports.
+
+        Args:
+            claims_total: Total claims checked
+            claims_verified: Claims that passed verification
+            claims_flagged: Claims that failed verification
+            confidence: Overall confidence score
+            flagged_claims: List of (claim_id, claim_text, reason) tuples
+            gaps: List of (gap_type, description) tuples
+        """
+        text = Text()
+
+        # Header
+        text.append(f"{Symbol.VERIFY.value} ", style=f"bold {Color.VERIFY.value}")
+        text.append("Verification Report\n", style="bold")
+        text.append("─" * 40 + "\n", style=Color.DIM.value)
+
+        # Summary line
+        text.append("Claims: ", style="bold")
+        text.append(f"{claims_total} total, ")
+
+        if claims_verified == claims_total:
+            text.append(f"{claims_verified} verified ", style=Color.SUCCESS.value)
+            text.append(f"{Symbol.SUCCESS.value}\n", style=Color.SUCCESS.value)
+        else:
+            text.append(f"{claims_verified} verified, ", style=Color.SUCCESS.value)
+            text.append(f"{claims_flagged} flagged\n", style=Color.WARNING.value)
+
+        # Confidence bar
+        text.append("Confidence: ", style="bold")
+        bar_width = 10
+        filled = int(bar_width * confidence)
+        empty = bar_width - filled
+
+        if confidence >= 0.8:
+            bar_color = Color.SUCCESS.value
+        elif confidence >= 0.6:
+            bar_color = Color.WARNING.value
+        else:
+            bar_color = Color.ERROR.value
+
+        text.append("█" * filled, style=bar_color)
+        text.append("░" * empty, style=Color.DIM.value)
+        text.append(f" {confidence:.0%}\n", style=bar_color)
+
+        # Flagged claims section
+        if flagged_claims:
+            text.append("\nFlagged Claims:\n", style=f"bold {Color.WARNING.value}")
+            for claim_id, claim_text, reason in flagged_claims[:5]:  # Limit to 5
+                text.append(f"  [{claim_id}] ", style=Color.DIM.value)
+                # Truncate long claims
+                display_text = claim_text[:50] + "..." if len(claim_text) > 50 else claim_text
+                text.append(f'"{display_text}"\n')
+                text.append(f"       Reason: {reason}\n", style=Color.WARNING.value)
+
+            if len(flagged_claims) > 5:
+                text.append(f"  ... and {len(flagged_claims) - 5} more\n", style=Color.DIM.value)
+
+        # Evidence gaps section
+        if gaps:
+            text.append("\nEvidence Gaps:\n", style=f"bold {Color.ERROR.value}")
+            for gap_type, description in gaps[:3]:  # Limit to 3
+                text.append(f"  • {gap_type}: ", style=Color.WARNING.value)
+                text.append(f"{description}\n")
+
+            if len(gaps) > 3:
+                text.append(f"  ... and {len(gaps) - 3} more\n", style=Color.DIM.value)
+
+        # Determine border color
+        if claims_flagged == 0 and confidence >= 0.8:
+            border_color = Color.SUCCESS.value
+        elif claims_flagged > 0 or confidence < 0.6:
+            border_color = Color.WARNING.value
+        else:
+            border_color = Color.VERIFY.value
+
+        self.console.print(Panel(text, border_style=border_color, padding=(0, 1)))
+
+    def emit_flagged_claim(
+        self,
+        claim_id: str,
+        claim_text: str,
+        reason: str,
+        suggestion: str | None = None,
+        depth: int = 0,
+    ) -> None:
+        """
+        Emit a flagged claim with details.
+
+        SPEC-16.34: Individual flagged claim output.
+        """
+        if not self._should_emit("verbose"):
+            return
+
+        text = self._format_prefix(depth)
+        text.append(f"{Symbol.WARNING.value} ", style=f"bold {Color.WARNING.value}")
+        text.append(f"[{claim_id}] ", style=Color.DIM.value)
+
+        # Truncate long claims
+        display_text = claim_text[:60] + "..." if len(claim_text) > 60 else claim_text
+        text.append(f'"{display_text}"\n')
+
+        # Reason
+        text.append(f"         Reason: {reason}", style=Color.WARNING.value)
+
+        if suggestion:
+            text.append(f"\n         Suggestion: {suggestion}", style=Color.SUCCESS.value)
+
         self.console.print(text)
 
     # -------------------------------------------------------------------------

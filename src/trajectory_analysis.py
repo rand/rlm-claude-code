@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .trajectory import TrajectoryEvent, TrajectoryEventType
+from .trajectory import TrajectoryEvent, TrajectoryEventType, VerificationPayload
 
 
 class StrategyType(Enum):
@@ -69,6 +69,13 @@ class TrajectoryMetrics:
     # Success metrics
     completed: bool = False
     final_answer_found: bool = False
+
+    # Verification metrics (SPEC-16.36)
+    verification_count: int = 0
+    verified_claims: int = 0
+    flagged_claims: int = 0
+    verification_retries: int = 0
+    avg_verification_confidence: float = 0.0
 
 
 @dataclass
@@ -135,6 +142,12 @@ class StrategyAnalysis:
                 "max_depth": self.metrics.max_depth,
                 "total_tokens": self.metrics.total_tokens,
                 "completed": self.metrics.completed,
+                # Verification metrics (SPEC-16.36)
+                "verification_count": self.metrics.verification_count,
+                "verified_claims": self.metrics.verified_claims,
+                "flagged_claims": self.metrics.flagged_claims,
+                "verification_retries": self.metrics.verification_retries,
+                "avg_verification_confidence": self.metrics.avg_verification_confidence,
             },
             "code_patterns": self.code_patterns,
             "success": self.success,
@@ -244,6 +257,8 @@ class TrajectoryAnalyzer:
         metrics.total_events = len(events)
 
         depths = []
+        verification_confidences = []
+
         for event in events:
             depths.append(event.depth)
 
@@ -256,6 +271,21 @@ class TrajectoryAnalyzer:
             elif event.type == TrajectoryEventType.FINAL:
                 metrics.completed = True
                 metrics.final_answer_found = True
+            elif event.type == TrajectoryEventType.VERIFICATION:
+                # SPEC-16.36: Extract verification metrics
+                metrics.verification_count += 1
+                if isinstance(event.typed_payload, VerificationPayload):
+                    payload = event.typed_payload
+                    metrics.verified_claims += payload.claims_verified
+                    metrics.flagged_claims += payload.claims_flagged
+                    metrics.verification_retries += payload.retry_count
+                    verification_confidences.append(payload.confidence)
+                elif event.metadata:
+                    # Fallback to metadata if typed_payload not available
+                    metrics.verified_claims += event.metadata.get("claims_verified", 0)
+                    metrics.flagged_claims += event.metadata.get("claims_flagged", 0)
+                    if "confidence" in event.metadata:
+                        verification_confidences.append(event.metadata["confidence"])
 
             # Extract token/cost from metadata
             if event.metadata:
@@ -268,6 +298,12 @@ class TrajectoryAnalyzer:
         if depths:
             metrics.max_depth = max(depths)
             metrics.avg_depth = sum(depths) / len(depths)
+
+        # Calculate average verification confidence (SPEC-16.36)
+        if verification_confidences:
+            metrics.avg_verification_confidence = sum(verification_confidences) / len(
+                verification_confidences
+            )
 
         # Calculate timing
         if len(events) >= 2:

@@ -65,6 +65,22 @@ from src.epistemic.verification_feedback import (
     VerificationFeedback,
     record_feedback,
 )
+from src.epistemic.verification_cache import (
+    CachedVerification,
+    VerificationCache,
+    create_cached_auditor,
+)
+from src.epistemic.prompts import (
+    Prompt,
+    PromptTemplate,
+    PROMPTS,
+    get_prompt,
+    format_prompt,
+    estimate_prompt_tokens,
+    truncate_evidence,
+    format_claims_compact,
+    format_evidence_compact,
+)
 
 __all__ = [
     # Core types
@@ -108,4 +124,18 @@ __all__ = [
     "FeedbackStatistics",
     "FeedbackStore",
     "record_feedback",
+    # Verification cache (SPEC-16.32)
+    "CachedVerification",
+    "VerificationCache",
+    "create_cached_auditor",
+    # Prompt templates (SPEC-16.33)
+    "Prompt",
+    "PromptTemplate",
+    "PROMPTS",
+    "get_prompt",
+    "format_prompt",
+    "estimate_prompt_tokens",
+    "truncate_evidence",
+    "format_claims_compact",
+    "format_evidence_compact",
 ]

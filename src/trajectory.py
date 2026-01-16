@@ -126,6 +126,18 @@ class BudgetAlertPayload:
     reason: str | None = None
 
 
+@dataclass
+class VerificationPayload:
+    """Payload for VERIFICATION events (SPEC-16.36)."""
+
+    claims_total: int = 0
+    claims_verified: int = 0
+    claims_flagged: int = 0
+    confidence: float = 0.0
+    flagged_claim_ids: list[str] = field(default_factory=list)
+    retry_count: int = 0
+
+
 # Union type for all payloads
 TrajectoryPayload = (
     RLMStartPayload
@@ -138,6 +150,7 @@ TrajectoryPayload = (
     | ToolUsePayload
     | CostPayload
     | BudgetAlertPayload
+    | VerificationPayload
 )
 
 
@@ -243,6 +256,7 @@ class TrajectoryRenderer:
         TrajectoryEventType.TOOL_USE: "⚙",
         TrajectoryEventType.COST_REPORT: "💰",
         TrajectoryEventType.BUDGET_ALERT: "⚠",
+        TrajectoryEventType.VERIFICATION: "✓",
     }
 
     LABELS = {
@@ -258,6 +272,7 @@ class TrajectoryRenderer:
         TrajectoryEventType.TOOL_USE: "TOOL",
         TrajectoryEventType.COST_REPORT: "COST",
         TrajectoryEventType.BUDGET_ALERT: "BUDGET",
+        TrajectoryEventType.VERIFICATION: "VERIFY",
     }
 
     COLORS = {
@@ -273,6 +288,7 @@ class TrajectoryRenderer:
         TrajectoryEventType.TOOL_USE: "\033[36m",  # Cyan
         TrajectoryEventType.COST_REPORT: "\033[1;33m",  # Bold yellow
         TrajectoryEventType.BUDGET_ALERT: "\033[1;33m",  # Bold yellow
+        TrajectoryEventType.VERIFICATION: "\033[1;34m",  # Bold blue
     }
 
     def __init__(self, verbosity: str = "normal", colors: bool = True):
@@ -809,6 +825,51 @@ class TrajectoryStream:
         )
         self._emit_sync(event)
 
+    def emit_verification(
+        self,
+        depth: int,
+        claims_total: int,
+        claims_verified: int,
+        claims_flagged: int,
+        confidence: float,
+        flagged_claim_ids: list[str] | None = None,
+        retry_count: int = 0,
+    ) -> None:
+        """
+        Emit verification checkpoint event.
+
+        SPEC-16.36: Verification events in trajectory analysis.
+
+        Args:
+            depth: Current recursion depth
+            claims_total: Total claims verified
+            claims_verified: Claims that passed verification
+            claims_flagged: Claims that failed verification
+            confidence: Overall verification confidence
+            flagged_claim_ids: IDs of flagged claims
+            retry_count: Number of verification retries performed
+        """
+        event = TrajectoryEvent(
+            type=TrajectoryEventType.VERIFICATION,
+            depth=depth,
+            content=f"Verified {claims_verified}/{claims_total} claims (confidence: {confidence:.0%})",
+            metadata={
+                "claims_total": claims_total,
+                "claims_verified": claims_verified,
+                "claims_flagged": claims_flagged,
+                "confidence": confidence,
+            },
+            typed_payload=VerificationPayload(
+                claims_total=claims_total,
+                claims_verified=claims_verified,
+                claims_flagged=claims_flagged,
+                confidence=confidence,
+                flagged_claim_ids=flagged_claim_ids or [],
+                retry_count=retry_count,
+            ),
+        )
+        self._emit_sync(event)
+
     def _emit_sync(self, event: TrajectoryEvent) -> None:
         """Emit event synchronously (for non-async contexts)."""
         # Just append to events list directly for sync contexts
@@ -843,4 +904,5 @@ __all__ = [
     "ToolUsePayload",
     "CostPayload",
     "BudgetAlertPayload",
+    "VerificationPayload",  # SPEC-16.36
 ]
