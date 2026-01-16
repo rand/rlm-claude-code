@@ -512,3 +512,147 @@ class TestVerificationCheckpoint:
         assert config.support_threshold == 0.7
         assert config.max_retries == 2
         assert config.on_failure == "retry"  # Default to retry on failure
+
+
+# --- SPEC-16.24: Retry with Evidence Focus ---
+
+
+class TestRetryWithEvidenceFocus:
+    """Tests for evidence-focused retry functionality."""
+
+    def test_build_evidence_focused_retry_prompt_exists(self) -> None:
+        """
+        @trace SPEC-16.24
+        _build_evidence_focused_retry_prompt method should exist.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        assert hasattr(orchestrator, "_build_evidence_focused_retry_prompt")
+        assert callable(orchestrator._build_evidence_focused_retry_prompt)
+
+    def test_build_evidence_focused_retry_prompt_includes_flagged_claims(self) -> None:
+        """
+        @trace SPEC-16.24
+        Retry prompt should include flagged claims.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        flagged = ["The function returns None", "The API supports JSON"]
+        prompt = orchestrator._build_evidence_focused_retry_prompt(
+            flagged_texts=flagged,
+            critical_gaps=[],
+            evidence_sources=[],
+        )
+
+        assert "Unverified Claims" in prompt
+        assert "The function returns None" in prompt
+        assert "The API supports JSON" in prompt
+
+    def test_build_evidence_focused_retry_prompt_includes_evidence_sources(self) -> None:
+        """
+        @trace SPEC-16.24
+        Retry prompt should list available evidence sources.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        sources = ["src/api.py", "src/models.py"]
+        prompt = orchestrator._build_evidence_focused_retry_prompt(
+            flagged_texts=["Some claim"],
+            critical_gaps=[],
+            evidence_sources=sources,
+        )
+
+        assert "Available Evidence Sources" in prompt
+        assert "src/api.py" in prompt
+        assert "src/models.py" in prompt
+
+    def test_build_evidence_focused_retry_prompt_includes_critical_gaps(self) -> None:
+        """
+        @trace SPEC-16.24
+        Retry prompt should explain critical issues found.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+
+        # Mock a gap with gap_type attribute
+        class MockGap:
+            gap_type = "phantom_citation"
+
+        prompt = orchestrator._build_evidence_focused_retry_prompt(
+            flagged_texts=["Some claim"],
+            critical_gaps=[MockGap()],
+            evidence_sources=[],
+        )
+
+        assert "Critical Issues Found" in prompt
+        assert "Phantom citation" in prompt
+
+    def test_build_evidence_focused_retry_prompt_includes_requirements(self) -> None:
+        """
+        @trace SPEC-16.24
+        Retry prompt should include grounding requirements.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        prompt = orchestrator._build_evidence_focused_retry_prompt(
+            flagged_texts=["Some claim"],
+            critical_gaps=[],
+            evidence_sources=[],
+        )
+
+        assert "Requirements for Revised Response" in prompt
+        assert "Only make claims you can support" in prompt
+        assert "Cite specific sources" in prompt
+        assert "Acknowledge uncertainty" in prompt
+
+    def test_verification_config_has_critical_model(self) -> None:
+        """
+        @trace SPEC-16.24
+        VerificationConfig should have critical_model for retry.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig()
+        assert hasattr(config, "critical_model")
+        # Critical model should be Sonnet by default
+        assert config.critical_model == "sonnet"
+
+    def test_verification_config_max_retries_default(self) -> None:
+        """
+        @trace SPEC-16.24
+        VerificationConfig should have max_retries for escalation control.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig()
+        assert hasattr(config, "max_retries")
+        assert config.max_retries == 2  # Default to 2 retries before escalation
+
+    def test_hallucination_report_has_flagged_claim_texts(self) -> None:
+        """
+        @trace SPEC-16.24
+        HallucinationReport should expose flagged claim texts.
+        """
+        from src.epistemic import HallucinationReport
+
+        report = HallucinationReport(response_id="test")
+        assert hasattr(report, "flagged_claim_texts")
+        # Should be list
+        assert isinstance(report.flagged_claim_texts, list)
+
+    def test_hallucination_report_has_critical_gaps(self) -> None:
+        """
+        @trace SPEC-16.24
+        HallucinationReport should expose critical gaps.
+        """
+        from src.epistemic import HallucinationReport
+
+        report = HallucinationReport(response_id="test")
+        assert hasattr(report, "critical_gaps")
+        # Should be list
+        assert isinstance(report.critical_gaps, list)

@@ -428,6 +428,104 @@ class RLMOrchestrator:
             if state.final_answer:
                 break
 
+        # SPEC-16.22: Verification checkpoint (always-on unless disabled or /simple)
+        verification_report: HallucinationReport | None = None
+        retry_count = 0
+        max_retries = self.verification_config.max_retries
+        needs_user_intervention = False  # SPEC-16.24: Track if escalation needed
+
+        if state.final_answer and self.verification_config.enabled:
+            verification_report, should_retry = await self._verify_response(
+                state.final_answer, context, client, trajectory
+            )
+            yield TrajectoryEvent(
+                type=TrajectoryEventType.VERIFICATION,
+                depth=0,
+                content=f"Verification complete: {verification_report.verification_rate:.0%} verified",
+                metadata={"report": {"flagged_claims": verification_report.flagged_claims}},
+            )
+
+            # SPEC-16.24: Handle retry with evidence focus
+            while should_retry and retry_count < max_retries:
+                retry_count += 1
+
+                # Build evidence-focused retry prompt
+                flagged_texts = verification_report.flagged_claim_texts[:3]  # Limit to 3
+                critical_gaps = verification_report.critical_gaps[:2]  # Top 2 critical
+
+                # List available evidence sources
+                evidence_sources = list(context.files.keys())[:5]  # Limit to 5
+                if context.tool_outputs:
+                    evidence_sources.extend(
+                        [f"tool output: {to.tool_name}" for to in context.tool_outputs[:3]]
+                    )
+
+                retry_prompt = self._build_evidence_focused_retry_prompt(
+                    flagged_texts, critical_gaps, evidence_sources
+                )
+
+                state.messages.append({"role": "assistant", "content": state.final_answer})
+                state.messages.append({"role": "user", "content": retry_prompt})
+                state.final_answer = None
+
+                # Use Sonnet (critical_model) for retry - this is a critical path
+                retry_model = self.verification_config.critical_model
+
+                # Emit retry event
+                yield TrajectoryEvent(
+                    type=TrajectoryEventType.VERIFICATION,
+                    depth=0,
+                    content=f"Retry {retry_count}/{max_retries}: Re-querying with evidence focus (using {retry_model})",
+                    metadata={"retry_count": retry_count, "model": retry_model},
+                )
+
+                # Re-run limited turns for retry
+                retry_turns = 0
+                while retry_turns < 3 and state.final_answer is None:
+                    retry_turns += 1
+                    try:
+                        response = await client.complete(
+                            messages=state.messages,
+                            system=system_prompt,
+                            model=retry_model,  # Use critical model for retry
+                            max_tokens=4096,
+                            component=CostComponent.ROOT_PROMPT,
+                        )
+                    except Exception as e:
+                        state.error = str(e)
+                        break
+
+                    parsed_items = self.parser.parse(response.content)
+                    for item in parsed_items:
+                        if item.action == ResponseAction.FINAL_ANSWER:
+                            state.final_answer = item.content
+                            break
+                    if not state.final_answer:
+                        state.messages.append({"role": "assistant", "content": response.content})
+                        state.messages.append(
+                            {"role": "user", "content": "Please provide FINAL: <answer>"}
+                        )
+
+                # Re-verify after retry
+                if state.final_answer:
+                    verification_report, should_retry = await self._verify_response(
+                        state.final_answer, context, client, trajectory
+                    )
+
+            # SPEC-16.24: Escalate to "ask" mode if retries exhausted and still has issues
+            if should_retry and retry_count >= max_retries:
+                needs_user_intervention = True
+                yield TrajectoryEvent(
+                    type=TrajectoryEventType.VERIFICATION,
+                    depth=0,
+                    content=f"Escalation: {verification_report.flagged_claims} claims still unverified after {retry_count} retries",
+                    metadata={
+                        "escalation": "ask",
+                        "flagged_claims": verification_report.flagged_claim_texts,
+                        "critical_gaps": [g.claim_text for g in verification_report.critical_gaps],
+                    },
+                )
+
         # Final event
         if state.final_answer:
             final_content = state.final_answer
@@ -463,6 +561,18 @@ class RLMOrchestrator:
                 success=state.error is None,
             )
 
+        # Build verification metadata
+        verification_metadata: dict[str, Any] = {}
+        if verification_report is not None:
+            verification_metadata = {
+                "total_claims": verification_report.total_claims,
+                "verified_claims": verification_report.verified_claims,
+                "flagged_claims": verification_report.flagged_claims,
+                "verification_rate": verification_report.verification_rate,
+                "retry_count": retry_count,
+                "needs_user_intervention": needs_user_intervention,
+            }
+
         final_event = TrajectoryEvent(
             type=TrajectoryEventType.FINAL,
             depth=0,
@@ -471,6 +581,7 @@ class RLMOrchestrator:
                 "turns": state.turn,
                 "cost": cost_metadata,
                 "memory": memory_metadata,
+                "verification": verification_metadata,
             },
         )
         await trajectory.emit(final_event)
@@ -1081,6 +1192,78 @@ Respond with just the simplified code in a ```python block."""
         await trajectory.emit(verification_event)
 
         return report, should_retry
+
+    def _build_evidence_focused_retry_prompt(
+        self,
+        flagged_texts: list[str],
+        critical_gaps: list,
+        evidence_sources: list[str],
+    ) -> str:
+        """
+        Build an evidence-focused retry prompt.
+
+        Implements: SPEC-16.24 Retry with evidence focus
+
+        Creates a prompt that:
+        1. Lists the specific claims that couldn't be verified
+        2. Identifies the type of issues found (phantom citations, contradictions, etc.)
+        3. Lists available evidence sources to consult
+        4. Requests a grounded response with explicit citations
+
+        Args:
+            flagged_texts: List of claim texts that were flagged
+            critical_gaps: List of EpistemicGap objects for critical issues
+            evidence_sources: List of available evidence source names
+
+        Returns:
+            Formatted retry prompt string
+        """
+        prompt_parts = [
+            "## Verification Failed\n",
+            "Some claims in your response could not be verified against the available evidence.\n\n",
+        ]
+
+        # List flagged claims
+        if flagged_texts:
+            prompt_parts.append("### Unverified Claims\n")
+            for claim in flagged_texts:
+                prompt_parts.append(f"- {claim}\n")
+            prompt_parts.append("\n")
+
+        # Explain critical issues
+        if critical_gaps:
+            prompt_parts.append("### Critical Issues Found\n")
+            for gap in critical_gaps:
+                gap_type = getattr(gap, "gap_type", "unknown")
+                if gap_type == "phantom_citation":
+                    prompt_parts.append("- **Phantom citation**: Referenced source not found\n")
+                elif gap_type == "contradicted":
+                    prompt_parts.append("- **Contradiction**: Evidence contradicts claim\n")
+                elif gap_type == "unsupported":
+                    prompt_parts.append("- **Unsupported**: No evidence supports this claim\n")
+                elif gap_type == "over_extrapolation":
+                    prompt_parts.append("- **Over-extrapolation**: Claim goes beyond evidence\n")
+            prompt_parts.append("\n")
+
+        # List available evidence
+        if evidence_sources:
+            prompt_parts.append("### Available Evidence Sources\n")
+            prompt_parts.append("Please ground your response in these sources:\n")
+            for source in evidence_sources:
+                prompt_parts.append(f"- `{source}`\n")
+            prompt_parts.append("\n")
+
+        # Instructions for grounded response
+        prompt_parts.extend([
+            "### Requirements for Revised Response\n",
+            "1. **Only make claims you can support** with the available evidence\n",
+            "2. **Cite specific sources** when making factual claims (e.g., 'According to src/file.py...')\n",
+            "3. **Acknowledge uncertainty** if evidence is incomplete or ambiguous\n",
+            "4. **Remove or qualify** any claims that cannot be verified\n\n",
+            "Provide a revised FINAL: <answer> that addresses these issues.",
+        ])
+
+        return "".join(prompt_parts)
 
 
 __all__ = [
