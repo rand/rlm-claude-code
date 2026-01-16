@@ -14,6 +14,7 @@ Complete documentation for using RLM-Claude-Code effectively.
 - [Budget Management](#budget-management)
 - [Trajectory Analysis](#trajectory-analysis)
 - [Strategy Learning](#strategy-learning)
+- [Epistemic Verification](#epistemic-verification)
 - [Advanced Configuration](#advanced-configuration)
 - [Best Practices](#best-practices)
 
@@ -651,6 +652,217 @@ With debug verbosity:
   Strategy: grepping (effectiveness: 0.94)
   Suggestion: Use search() with regex pattern
 ```
+
+---
+
+## Epistemic Verification
+
+RLM includes always-on hallucination detection that verifies claims against evidence.
+
+### Why Verification Matters
+
+LLMs can exhibit "procedural hallucinations" where they:
+- Have correct information but fail to use it properly
+- Cite evidence that doesn't actually support their claims
+- Present confident answers disconnected from provided context
+
+Epistemic verification catches these issues by checking claims against evidence.
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/verify` | Show verification status and configuration |
+| `/verify on` | Enable verification for this session |
+| `/verify off` | Disable verification |
+| `/verify report` | Show the last verification report |
+| `/verify claim "..."` | Verify a specific claim against context |
+| `/verify feedback <id> correct\|incorrect` | Provide accuracy feedback |
+| `/verify stats` | Show feedback statistics |
+| `/verify mode <mode>` | Set verification mode |
+
+### Verification Modes
+
+| Mode | Description | Cost |
+|------|-------------|------|
+| `full` | Verify all extracted claims | Highest |
+| `sample` | Verify critical claims + 30% sample (default) | Medium |
+| `critical` | Only verify claims marked as critical | Lowest |
+
+Set the mode:
+```
+/verify mode sample
+```
+
+### REPL Functions
+
+When RLM is active, these verification functions are available:
+
+#### `verify_claim(claim, evidence, threshold=0.7)`
+
+Verify a single claim against evidence.
+
+```python
+result = verify_claim(
+    "The function returns 42",
+    "def func(): return 42",
+    threshold=0.7
+)
+# Returns ClaimVerification with:
+# - evidence_support: 0.95
+# - evidence_dependence: 0.8
+# - is_flagged: False
+```
+
+#### `evidence_dependence(question, answer, evidence)`
+
+Check if an answer actually depends on the evidence provided.
+
+```python
+score = evidence_dependence(
+    "What color is the widget?",
+    "The widget is blue.",
+    "According to the spec, widgets are blue."
+)
+# Returns 0.0-1.0
+# - 1.0 = answer fully depends on evidence (good)
+# - 0.0 = answer unchanged without evidence (potential hallucination)
+```
+
+#### `audit_reasoning(steps, sources)`
+
+Verify a chain of reasoning steps.
+
+```python
+results = audit_reasoning(
+    steps=[
+        {"claim": "The function returns 42", "cites": ["src1"]},
+        {"claim": "This matches the spec", "cites": ["src2"]},
+    ],
+    sources={
+        "src1": "def func(): return 42",
+        "src2": "Spec: func should return 42",
+    }
+)
+```
+
+#### `detect_hallucinations(response, context)`
+
+Auto-detect and verify all claims in a response.
+
+```python
+report = detect_hallucinations(
+    response="The function returns 42 and handles errors gracefully.",
+    context="def func(): return 42",
+    support_threshold=0.7
+)
+# Returns HallucinationReport with flagged claims and gaps
+```
+
+### Understanding Verification Output
+
+The verification report shows:
+
+```
+Verification Report
+───────────────────
+Response: resp-abc123
+Mode: sample (30% sampling)
+
+Claims: 5 total, 4 verified, 1 flagged
+Confidence: 0.85
+
+Flagged Claims:
+  [c3] "The API returns XML data"
+       Reason: unsupported
+       Suggestion: Provide supporting evidence or remove claim
+
+Evidence Gaps:
+  - partial_support (c2): Claim goes beyond available evidence
+```
+
+**Key metrics:**
+- **Claims verified**: Passed evidence support and dependence checks
+- **Claims flagged**: Failed verification (reasons below)
+- **Confidence**: Overall weighted score (higher = more trustworthy)
+
+**Flag reasons:**
+| Reason | Meaning |
+|--------|---------|
+| `unsupported` | No evidence supports the claim |
+| `phantom_citation` | Cited source doesn't exist |
+| `contradiction` | Evidence contradicts the claim |
+| `over_extrapolation` | Claim goes beyond what evidence states |
+| `low_dependence` | Answer unchanged without evidence |
+
+### User Feedback Loop
+
+Help improve verification accuracy by providing feedback:
+
+```
+/verify feedback c1 correct      # Verification was accurate
+/verify feedback c2 incorrect    # False positive - claim was actually fine
+```
+
+View accuracy statistics:
+```
+/verify stats
+```
+
+Feedback is stored and used to calibrate thresholds over time.
+
+### Configuration
+
+In `~/.claude/rlm-config.json`:
+
+```json
+{
+  "verification": {
+    "enabled": true,
+    "mode": "sample",
+    "support_threshold": 0.7,
+    "dependence_threshold": 0.3,
+    "sample_rate": 0.3,
+    "on_failure": "retry",
+    "max_retries": 2,
+    "verification_model": "haiku",
+    "critical_model": "sonnet"
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable/disable verification |
+| `mode` | `"sample"` | full, sample, or critical_only |
+| `support_threshold` | `0.7` | Minimum evidence support score |
+| `dependence_threshold` | `0.3` | Minimum evidence dependence |
+| `sample_rate` | `0.3` | Fraction to verify in sample mode |
+| `on_failure` | `"retry"` | Action on failure: flag, retry, or ask |
+| `verification_model` | `"haiku"` | Model for standard verification |
+| `critical_model` | `"sonnet"` | Model for critical claims |
+
+### When to Enable/Disable
+
+**Enable verification when:**
+- Accuracy is critical (production docs, code review)
+- Working with unfamiliar codebases
+- Generating technical specifications
+- Claims seem wrong or suspicious
+
+**Disable verification when:**
+- Quick iterations where speed matters more
+- Creative or exploratory tasks
+- You're confident in the context
+
+### Cost Considerations
+
+Verification adds overhead (~$0.001 per response in sample mode):
+- Claim extraction: ~$0.0003
+- Evidence mapping: ~$0.0002
+- Per-claim verification: ~$0.0001 each
+
+Use `critical` mode for lowest cost, `full` mode only when accuracy is paramount.
 
 ---
 
