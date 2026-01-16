@@ -154,6 +154,15 @@ VALID_DECISION_TYPES = frozenset(
     }
 )
 
+# Epistemic edge labels (SPEC-16.13, 16.14)
+EPISTEMIC_EDGE_LABELS = frozenset(
+    {
+        "cites",  # claim → evidence_source (claim cites evidence)
+        "verifies",  # verification → claim (positive verification result)
+        "refutes",  # verification → claim (negative verification result)
+    }
+)
+
 
 # =============================================================================
 # ReasoningTraces Class
@@ -512,6 +521,32 @@ class ReasoningTraces:
 
         return self._update_decision(claim_id, **updates)
 
+    def link_claim_to_evidence(
+        self,
+        claim_id: str,
+        evidence_id: str,
+    ) -> None:
+        """
+        Link a claim to an evidence source (cites relationship).
+
+        Implements: Spec SPEC-16.13
+
+        Creates a "cites" edge from the claim to the evidence source,
+        indicating that the claim references or is based on this evidence.
+
+        Args:
+            claim_id: The claim node ID
+            evidence_id: The evidence source node ID (fact, observation, etc.)
+        """
+        self.store.create_edge(
+            edge_type="relation",
+            label="cites",
+            members=[
+                {"node_id": claim_id, "role": "subject", "position": 0},
+                {"node_id": evidence_id, "role": "object", "position": 1},
+            ],
+        )
+
     def create_verification(
         self,
         claim_id: str,
@@ -590,10 +625,12 @@ class ReasoningTraces:
             parent_id=parent_id,
         )
 
-        # Create edge linking verification to claim (verifies relationship)
+        # Create edge linking verification to claim
+        # Use "refutes" for flagged verifications, "verifies" for positive ones (SPEC-16.14)
+        edge_label = "refutes" if is_flagged else "verifies"
         self.store.create_edge(
             edge_type="relation",
-            label="verifies",
+            label=edge_label,
             members=[
                 {"node_id": verification_id, "role": "subject", "position": 0},
                 {"node_id": claim_id, "role": "object", "position": 1},
@@ -1637,4 +1674,5 @@ __all__ = [
     "RejectedOption",
     "EvidenceScore",
     "VALID_DECISION_TYPES",
+    "EPISTEMIC_EDGE_LABELS",
 ]

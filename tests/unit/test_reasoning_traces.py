@@ -1776,3 +1776,175 @@ class TestVerificationDecisionType:
         assert node2.verified_claim_id == claim_id
         assert node1.support_score == 0.6
         assert node2.support_score == 0.8
+
+
+class TestEpistemicEdgeLabels:
+    """Tests for epistemic edge labels (SPEC-16.13, 16.14)."""
+
+    def test_epistemic_edge_labels_constant(self):
+        """EPISTEMIC_EDGE_LABELS contains all epistemic edge types."""
+        from src.reasoning_traces import EPISTEMIC_EDGE_LABELS
+
+        assert "cites" in EPISTEMIC_EDGE_LABELS
+        assert "verifies" in EPISTEMIC_EDGE_LABELS
+        assert "refutes" in EPISTEMIC_EDGE_LABELS
+        assert len(EPISTEMIC_EDGE_LABELS) == 3
+
+    def test_link_claim_to_evidence_creates_cites_edge(self, reasoning_traces):
+        """link_claim_to_evidence creates a 'cites' edge."""
+        # Create a claim and an observation (evidence)
+        claim_id = reasoning_traces.create_claim(claim_text="The function returns 42")
+        observation_id = reasoning_traces.create_observation(
+            content="Observed function returned 42"
+        )
+
+        # Link claim to evidence
+        reasoning_traces.link_claim_to_evidence(claim_id, observation_id)
+
+        # Check the edge exists
+        claim_edges = reasoning_traces.store.get_edges_for_node(claim_id)
+        cites_edges = [e for e in claim_edges if e.label == "cites"]
+        assert len(cites_edges) == 1
+
+        # Evidence should also have the edge
+        evidence_edges = reasoning_traces.store.get_edges_for_node(observation_id)
+        evidence_cites = [e for e in evidence_edges if e.label == "cites"]
+        assert len(evidence_cites) == 1
+
+        # Same edge
+        assert cites_edges[0].id == evidence_cites[0].id
+
+    def test_link_claim_to_multiple_evidence_sources(self, reasoning_traces):
+        """Can link a claim to multiple evidence sources."""
+        claim_id = reasoning_traces.create_claim(claim_text="Complex claim")
+        obs1_id = reasoning_traces.create_observation(content="Evidence 1")
+        obs2_id = reasoning_traces.create_observation(content="Evidence 2")
+        obs3_id = reasoning_traces.create_observation(content="Evidence 3")
+
+        reasoning_traces.link_claim_to_evidence(claim_id, obs1_id)
+        reasoning_traces.link_claim_to_evidence(claim_id, obs2_id)
+        reasoning_traces.link_claim_to_evidence(claim_id, obs3_id)
+
+        claim_edges = reasoning_traces.store.get_edges_for_node(claim_id)
+        cites_edges = [e for e in claim_edges if e.label == "cites"]
+        assert len(cites_edges) == 3
+
+    def test_positive_verification_creates_verifies_edge(self, reasoning_traces):
+        """Positive verification (not flagged) creates 'verifies' edge."""
+        claim_id = reasoning_traces.create_claim(claim_text="Valid claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.9,
+            dependence_score=0.8,
+            is_flagged=False,
+        )
+
+        # Check for verifies edge
+        edges = reasoning_traces.store.get_edges_for_node(verification_id)
+        verifies_edges = [e for e in edges if e.label == "verifies"]
+        refutes_edges = [e for e in edges if e.label == "refutes"]
+
+        assert len(verifies_edges) == 1
+        assert len(refutes_edges) == 0
+
+    def test_flagged_verification_creates_refutes_edge(self, reasoning_traces):
+        """Flagged verification creates 'refutes' edge instead of 'verifies'."""
+        claim_id = reasoning_traces.create_claim(claim_text="Suspicious claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.2,
+            dependence_score=0.1,
+            is_flagged=True,
+            flag_reason="unsupported",
+        )
+
+        # Check for refutes edge
+        edges = reasoning_traces.store.get_edges_for_node(verification_id)
+        verifies_edges = [e for e in edges if e.label == "verifies"]
+        refutes_edges = [e for e in edges if e.label == "refutes"]
+
+        assert len(verifies_edges) == 0
+        assert len(refutes_edges) == 1
+
+    def test_refutes_edge_links_verification_to_claim(self, reasoning_traces):
+        """Refutes edge properly links verification to claim."""
+        claim_id = reasoning_traces.create_claim(claim_text="Bad claim")
+
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.1,
+            dependence_score=0.05,
+            is_flagged=True,
+            flag_reason="contradiction",
+        )
+
+        # Both nodes should have the same refutes edge
+        v_edges = reasoning_traces.store.get_edges_for_node(verification_id)
+        c_edges = reasoning_traces.store.get_edges_for_node(claim_id)
+
+        v_refutes = [e for e in v_edges if e.label == "refutes"]
+        c_refutes = [e for e in c_edges if e.label == "refutes"]
+
+        assert len(v_refutes) == 1
+        assert len(c_refutes) == 1
+        assert v_refutes[0].id == c_refutes[0].id
+
+    def test_multiple_verifications_different_edges(self, reasoning_traces):
+        """Multiple verifications can have different edge types."""
+        claim_id = reasoning_traces.create_claim(claim_text="Disputed claim")
+
+        # First verification: positive
+        v1_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.8,
+            dependence_score=0.7,
+            is_flagged=False,
+        )
+
+        # Second verification: negative
+        v2_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.2,
+            dependence_score=0.1,
+            is_flagged=True,
+            flag_reason="low_dependence",
+        )
+
+        # Check edges for each verification
+        v1_edges = reasoning_traces.store.get_edges_for_node(v1_id)
+        v2_edges = reasoning_traces.store.get_edges_for_node(v2_id)
+
+        v1_verifies = [e for e in v1_edges if e.label == "verifies"]
+        v1_refutes = [e for e in v1_edges if e.label == "refutes"]
+        v2_verifies = [e for e in v2_edges if e.label == "verifies"]
+        v2_refutes = [e for e in v2_edges if e.label == "refutes"]
+
+        assert len(v1_verifies) == 1
+        assert len(v1_refutes) == 0
+        assert len(v2_verifies) == 0
+        assert len(v2_refutes) == 1
+
+    def test_claim_can_have_both_cites_and_verification_edges(self, reasoning_traces):
+        """A claim can have both cites edges and verification edges."""
+        claim_id = reasoning_traces.create_claim(claim_text="Well-documented claim")
+        obs_id = reasoning_traces.create_observation(content="Supporting evidence")
+
+        # Link to evidence
+        reasoning_traces.link_claim_to_evidence(claim_id, obs_id)
+
+        # Create verification
+        verification_id = reasoning_traces.create_verification(
+            claim_id=claim_id,
+            support_score=0.9,
+            dependence_score=0.85,
+        )
+
+        # Claim should have both cites and verifies edges
+        claim_edges = reasoning_traces.store.get_edges_for_node(claim_id)
+        cites_edges = [e for e in claim_edges if e.label == "cites"]
+        verifies_edges = [e for e in claim_edges if e.label == "verifies"]
+
+        assert len(cites_edges) == 1
+        assert len(verifies_edges) == 1
