@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_rlm.py",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_rlm.py",
             "timeout": 5000,
             "description": "Initialize RLM environment and load config"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check_complexity.py \"$PROMPT\"",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check_complexity.py \"$PROMPT\"",
             "timeout": 3000,
             "description": "Check if RLM should activate based on task complexity"
           }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sync_context.py",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sync_context.py",
             "timeout": 2000,
             "description": "Sync tool context with RLM state"
           }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/capture_output.py",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/capture_output.py",
             "timeout": 2000,
             "description": "Capture tool output for RLM context"
           }
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/externalize_context.py",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/externalize_context.py",
             "timeout": 10000,
             "description": "Externalize context before compaction"
           }
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory ${CLAUDE_PLUGIN_ROOT} python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_trajectory.py",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_trajectory.py",
             "timeout": 5000,
             "description": "Save trajectory on session end"
           }
