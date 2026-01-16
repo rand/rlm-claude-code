@@ -232,10 +232,77 @@ class ReasoningTraces:
 
         conn = sqlite3.connect(self.store.db_path)
         try:
+            # Check if table exists and needs migration
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='decisions'"
+            )
+            table_exists = cursor.fetchone() is not None
+
+            if table_exists:
+                # Run migration first for backward compatibility (SPEC-16.19)
+                # Migration adds columns that indexes depend on
+                self._migrate_epistemic_schema(conn)
+
+            # Create/update schema (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS)
             conn.executescript(DECISIONS_SCHEMA_SQL)
             conn.commit()
         finally:
             conn.close()
+
+    def _migrate_epistemic_schema(self, conn: Any) -> None:
+        """
+        Migrate decisions table for epistemic verification support.
+
+        Implements: SPEC-16.19
+
+        Adds claim and verification columns to existing databases
+        that were created before SPEC-16 implementation. Ensures
+        backward compatibility with older databases.
+        """
+        # Check current columns
+        cursor = conn.execute("PRAGMA table_info(decisions)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Columns needed for claims (SPEC-16.11)
+        claim_columns = [
+            ("claim_text", "TEXT"),
+            ("evidence_ids", "JSON DEFAULT '[]'"),
+            ("verification_status", "TEXT"),
+        ]
+
+        # Columns needed for verifications (SPEC-16.12)
+        verification_columns = [
+            ("verified_claim_id", "TEXT"),
+            ("support_score", "REAL"),
+            ("dependence_score", "REAL"),
+            ("consistency_score", "REAL"),
+            ("is_flagged", "INTEGER DEFAULT 0"),
+            ("flag_reason", "TEXT"),
+        ]
+
+        # Add missing columns (SQLite ALTER TABLE is limited, no CHECK constraints)
+        migration_needed = False
+        for col_name, col_def in claim_columns + verification_columns:
+            if col_name not in existing_columns:
+                migration_needed = True
+                try:
+                    conn.execute(f"ALTER TABLE decisions ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    # Column might already exist or other error - continue
+                    pass
+
+        # Create indexes if they don't exist
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_decisions_verification "
+            "ON decisions(verification_status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_decisions_verified_claim "
+            "ON decisions(verified_claim_id)"
+        )
+
+        if migration_needed:
+            conn.commit()
 
     # =========================================================================
     # Node Creation (SPEC-04.01-03)

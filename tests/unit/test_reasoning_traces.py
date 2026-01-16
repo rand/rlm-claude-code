@@ -2945,3 +2945,251 @@ class TestGetVerificationReport:
         assert report.verification_rate == 1.0
         assert report.has_critical_gaps is False
         assert report.should_retry is False
+
+
+# =============================================================================
+# SPEC-16.19: Schema Migration Tests
+# =============================================================================
+
+
+class TestEpistemicSchemaMigration:
+    """Tests for epistemic verification schema migration."""
+
+    def test_migration_adds_claim_columns_to_old_schema(self, temp_db_path):
+        """
+        Migration adds claim columns to databases without them.
+
+        @trace SPEC-16.19
+        """
+        import sqlite3
+        from src.memory_store import MemoryStore
+        from src.reasoning_traces import ReasoningTraces
+
+        # Create an "old" database without epistemic columns
+        conn = sqlite3.connect(temp_db_path)
+        # First create nodes table (required by foreign key)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS nodes (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tier TEXT DEFAULT 'task',
+                confidence REAL DEFAULT 0.5,
+                subtype TEXT,
+                embedding BLOB,
+                provenance TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                last_accessed INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                access_count INTEGER DEFAULT 0,
+                metadata JSON DEFAULT '{}'
+            );
+            -- Old decisions table without epistemic columns
+            CREATE TABLE IF NOT EXISTS decisions (
+                node_id TEXT PRIMARY KEY REFERENCES nodes(id),
+                decision_type TEXT NOT NULL,
+                confidence REAL DEFAULT 0.5,
+                prompt TEXT,
+                files JSON DEFAULT '[]',
+                branch TEXT,
+                commit_hash TEXT,
+                parent_id TEXT
+            );
+        """)
+        conn.commit()
+
+        # Verify old schema doesn't have epistemic columns
+        cursor = conn.execute("PRAGMA table_info(decisions)")
+        old_columns = {row[1] for row in cursor.fetchall()}
+        assert "claim_text" not in old_columns
+        assert "evidence_ids" not in old_columns
+        assert "verification_status" not in old_columns
+        conn.close()
+
+        # Initialize ReasoningTraces - should trigger migration
+        store = MemoryStore(db_path=temp_db_path)
+        ReasoningTraces(store)
+
+        # Verify migration added columns
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.execute("PRAGMA table_info(decisions)")
+        new_columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+
+        assert "claim_text" in new_columns
+        assert "evidence_ids" in new_columns
+        assert "verification_status" in new_columns
+        assert "verified_claim_id" in new_columns
+        assert "support_score" in new_columns
+        assert "dependence_score" in new_columns
+        assert "consistency_score" in new_columns
+        assert "is_flagged" in new_columns
+        assert "flag_reason" in new_columns
+
+    def test_migration_creates_indexes(self, temp_db_path):
+        """
+        Migration creates epistemic indexes.
+
+        @trace SPEC-16.19
+        """
+        import sqlite3
+        from src.memory_store import MemoryStore
+        from src.reasoning_traces import ReasoningTraces
+
+        # Create basic schema without indexes
+        conn = sqlite3.connect(temp_db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS nodes (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tier TEXT DEFAULT 'task',
+                confidence REAL DEFAULT 0.5,
+                subtype TEXT,
+                embedding BLOB,
+                provenance TEXT,
+                created_at INTEGER,
+                updated_at INTEGER,
+                last_accessed INTEGER,
+                access_count INTEGER DEFAULT 0,
+                metadata JSON DEFAULT '{}'
+            );
+            CREATE TABLE IF NOT EXISTS decisions (
+                node_id TEXT PRIMARY KEY,
+                decision_type TEXT NOT NULL,
+                confidence REAL DEFAULT 0.5,
+                prompt TEXT,
+                files JSON DEFAULT '[]',
+                branch TEXT,
+                commit_hash TEXT,
+                parent_id TEXT
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+        # Initialize ReasoningTraces
+        store = MemoryStore(db_path=temp_db_path)
+        ReasoningTraces(store)
+
+        # Verify indexes exist
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_decisions_%'"
+        )
+        index_names = {row[0] for row in cursor.fetchall()}
+        conn.close()
+
+        assert "idx_decisions_verification" in index_names
+        assert "idx_decisions_verified_claim" in index_names
+
+    def test_migration_is_idempotent(self, temp_db_path):
+        """
+        Running migration multiple times is safe.
+
+        @trace SPEC-16.19
+        """
+        from src.memory_store import MemoryStore
+        from src.reasoning_traces import ReasoningTraces
+
+        store = MemoryStore(db_path=temp_db_path)
+
+        # Initialize multiple times
+        rt1 = ReasoningTraces(store)
+        rt2 = ReasoningTraces(store)
+        rt3 = ReasoningTraces(store)
+
+        # Should work without errors
+        goal_id = rt3.create_goal(content="Test goal")
+        assert goal_id is not None
+
+    def test_migration_preserves_existing_data(self, temp_db_path):
+        """
+        Migration preserves existing decision data.
+
+        @trace SPEC-16.19
+        """
+        import sqlite3
+        from src.memory_store import MemoryStore
+        from src.reasoning_traces import ReasoningTraces
+
+        # Create old schema with data
+        conn = sqlite3.connect(temp_db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS nodes (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tier TEXT DEFAULT 'task',
+                confidence REAL DEFAULT 0.5,
+                subtype TEXT,
+                embedding BLOB,
+                provenance TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                last_accessed INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                access_count INTEGER DEFAULT 0,
+                metadata JSON DEFAULT '{}'
+            );
+            CREATE TABLE IF NOT EXISTS decisions (
+                node_id TEXT PRIMARY KEY REFERENCES nodes(id),
+                decision_type TEXT NOT NULL,
+                confidence REAL DEFAULT 0.5,
+                prompt TEXT,
+                files JSON DEFAULT '[]',
+                branch TEXT,
+                commit_hash TEXT,
+                parent_id TEXT
+            );
+            -- Insert test data
+            INSERT INTO nodes (id, type, content) VALUES ('test-node-1', 'decision', 'Test goal');
+            INSERT INTO decisions (node_id, decision_type, confidence, prompt)
+            VALUES ('test-node-1', 'goal', 0.8, 'Test prompt');
+        """)
+        conn.commit()
+        conn.close()
+
+        # Initialize ReasoningTraces - triggers migration
+        store = MemoryStore(db_path=temp_db_path)
+        rt = ReasoningTraces(store)
+
+        # Verify data is preserved
+        node = rt.get_decision_node("test-node-1")
+        assert node is not None
+        assert node.decision_type == "goal"
+        assert node.confidence == 0.8
+
+    def test_new_database_has_all_columns(self, reasoning_traces):
+        """
+        Fresh database includes all epistemic columns.
+
+        @trace SPEC-16.19
+        """
+        import sqlite3
+
+        conn = sqlite3.connect(reasoning_traces.store.db_path)
+        cursor = conn.execute("PRAGMA table_info(decisions)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+
+        # Verify all epistemic columns exist
+        expected_columns = {
+            "node_id",
+            "decision_type",
+            "confidence",
+            "prompt",
+            "files",
+            "branch",
+            "commit_hash",
+            "parent_id",
+            "claim_text",
+            "evidence_ids",
+            "verification_status",
+            "verified_claim_id",
+            "support_score",
+            "dependence_score",
+            "consistency_score",
+            "is_flagged",
+            "flag_reason",
+        }
+        assert expected_columns.issubset(columns)
