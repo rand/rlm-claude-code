@@ -7,7 +7,10 @@ Implements: Spec §5.3 Router Configuration
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .epistemic.types import VerificationConfig as VerificationConfigType
 
 
 @dataclass
@@ -86,6 +89,13 @@ class CostConfig:
     abort_on_cost_threshold: int = 50000  # tokens
 
 
+def _default_verification_config() -> "VerificationConfigType":
+    """Create default VerificationConfig. Implements: SPEC-16.21"""
+    from .epistemic.types import VerificationConfig
+
+    return VerificationConfig()
+
+
 @dataclass
 class RLMConfig:
     """
@@ -100,6 +110,8 @@ class RLMConfig:
     trajectory: TrajectoryConfig = field(default_factory=TrajectoryConfig)
     models: ModelConfig = field(default_factory=ModelConfig)
     cost_controls: CostConfig = field(default_factory=CostConfig)
+    # SPEC-16.21: Epistemic verification configuration
+    verification: "VerificationConfigType" = field(default_factory=_default_verification_config)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "RLMConfig":
@@ -118,6 +130,12 @@ class RLMConfig:
         if "root" in models_data and "root_model" not in models_data:
             models_data["root_model"] = models_data.pop("root")
 
+        # SPEC-16.21: Load verification config if present
+        from .epistemic.types import VerificationConfig
+
+        verification_data = data.get("verification", {})
+        verification = VerificationConfig(**verification_data) if verification_data else VerificationConfig()
+
         return cls(
             activation=ActivationConfig(**data.get("activation", {})),
             depth=DepthConfig(**data.get("depth", {})),
@@ -125,6 +143,7 @@ class RLMConfig:
             trajectory=TrajectoryConfig(**data.get("trajectory", {})),
             models=ModelConfig(**models_data),
             cost_controls=CostConfig(**data.get("cost_controls", {})),
+            verification=verification,
         )
 
     def save(self, path: Path | None = None) -> None:
@@ -133,6 +152,23 @@ class RLMConfig:
             path = Path.home() / ".claude" / "rlm-config.json"
 
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        # SPEC-16.21: Serialize verification config
+        # Need to convert dataclass to dict, handling any nested types
+        verification_dict = {
+            "enabled": self.verification.enabled,
+            "support_threshold": self.verification.support_threshold,
+            "dependence_threshold": self.verification.dependence_threshold,
+            "gap_threshold_bits": self.verification.gap_threshold_bits,
+            "on_failure": self.verification.on_failure,
+            "max_retries": self.verification.max_retries,
+            "verification_model": self.verification.verification_model,
+            "critical_model": self.verification.critical_model,
+            "max_claims_per_response": self.verification.max_claims_per_response,
+            "parallel_verification": self.verification.parallel_verification,
+            "mode": self.verification.mode,
+            "sample_rate": self.verification.sample_rate,
+        }
 
         with open(path, "w") as f:
             json.dump(
@@ -143,6 +179,7 @@ class RLMConfig:
                     "trajectory": self.trajectory.__dict__,
                     "models": self.models.__dict__,
                     "cost_controls": self.cost_controls.__dict__,
+                    "verification": verification_dict,
                 },
                 f,
                 indent=2,

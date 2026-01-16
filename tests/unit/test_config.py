@@ -306,3 +306,127 @@ class TestDefaultConfig:
         assert default_config.activation.mode == "micro"
         assert default_config.depth.max == 3
         assert default_config.models.root_model == "opus"
+
+
+class TestVerificationConfig:
+    """Tests for VerificationConfig in RLMConfig. Implements: SPEC-16.21"""
+
+    def test_rlm_config_has_verification_field(self):
+        """RLMConfig includes verification configuration."""
+        from src.epistemic.types import VerificationConfig
+
+        config = RLMConfig()
+        assert hasattr(config, "verification")
+        assert isinstance(config.verification, VerificationConfig)
+
+    def test_verification_default_values(self):
+        """Verification config has expected default values."""
+        config = RLMConfig()
+
+        assert config.verification.enabled is True
+        assert config.verification.support_threshold == 0.7
+        assert config.verification.dependence_threshold == 0.3
+        assert config.verification.gap_threshold_bits == 2.0
+        assert config.verification.on_failure == "retry"
+        assert config.verification.verification_model == "haiku"
+        assert config.verification.critical_model == "sonnet"
+        assert config.verification.max_retries == 2
+        assert config.verification.mode == "sample"
+
+    def test_verification_load_from_file(self):
+        """Can load verification config from JSON file."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "verification": {
+                        "enabled": False,
+                        "support_threshold": 0.8,
+                        "on_failure": "flag",
+                        "max_retries": 5,
+                    }
+                },
+                f,
+            )
+            f.flush()
+            config_path = Path(f.name)
+
+        try:
+            config = RLMConfig.load(config_path)
+
+            assert config.verification.enabled is False
+            assert config.verification.support_threshold == 0.8
+            assert config.verification.on_failure == "flag"
+            assert config.verification.max_retries == 5
+            # Non-specified values should be defaults
+            assert config.verification.dependence_threshold == 0.3
+        finally:
+            config_path.unlink()
+
+    def test_verification_save_and_load_roundtrip(self):
+        """Verification config survives save/load roundtrip."""
+        from src.epistemic.types import VerificationConfig
+
+        original = RLMConfig(
+            verification=VerificationConfig(
+                enabled=False,
+                support_threshold=0.9,
+                dependence_threshold=0.4,
+                gap_threshold_bits=3.0,
+                on_failure="ask",
+                max_retries=3,
+                verification_model="sonnet",
+                critical_model="opus",
+                max_claims_per_response=20,
+                parallel_verification=False,
+                mode="full",
+                sample_rate=0.5,
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test-config.json"
+            original.save(config_path)
+            loaded = RLMConfig.load(config_path)
+
+        assert loaded.verification.enabled is False
+        assert loaded.verification.support_threshold == 0.9
+        assert loaded.verification.dependence_threshold == 0.4
+        assert loaded.verification.gap_threshold_bits == 3.0
+        assert loaded.verification.on_failure == "ask"
+        assert loaded.verification.max_retries == 3
+        assert loaded.verification.verification_model == "sonnet"
+        assert loaded.verification.critical_model == "opus"
+        assert loaded.verification.max_claims_per_response == 20
+        assert loaded.verification.parallel_verification is False
+        assert loaded.verification.mode == "full"
+        assert loaded.verification.sample_rate == 0.5
+
+    def test_verification_absent_in_file_uses_defaults(self):
+        """Loading config without verification section uses defaults."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "activation": {"mode": "always"},
+                },
+                f,
+            )
+            f.flush()
+            config_path = Path(f.name)
+
+        try:
+            config = RLMConfig.load(config_path)
+
+            # Verification should be defaults
+            assert config.verification.enabled is True
+            assert config.verification.support_threshold == 0.7
+            assert config.verification.on_failure == "retry"
+        finally:
+            config_path.unlink()
+
+    def test_default_config_has_verification(self):
+        """default_config includes verification configuration."""
+        from src.epistemic.types import VerificationConfig
+
+        assert hasattr(default_config, "verification")
+        assert isinstance(default_config.verification, VerificationConfig)
+        assert default_config.verification.enabled is True
