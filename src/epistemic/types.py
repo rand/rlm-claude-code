@@ -340,13 +340,26 @@ class VerificationConfig:
                 f"max_claims_per_response must be at least 1, got {self.max_claims_per_response}"
             )
 
-    def should_verify_claim(self, claim_index: int, is_critical: bool) -> bool:
+    def should_verify_claim(
+        self,
+        claim_index: int,
+        is_critical: bool,
+        claim_text: str | None = None,
+    ) -> bool:
         """
         Determine if a claim should be verified based on mode.
+
+        Implements: SPEC-16.28 Sample mode for cost control
+
+        Prioritizes:
+        1. Critical claims (always verified)
+        2. Claims with uncertainty markers (hedging language)
+        3. Random sample of remaining claims
 
         Args:
             claim_index: Index of the claim (for sampling)
             is_critical: Whether the claim is marked as critical
+            claim_text: Optional claim text to check for uncertainty markers
 
         Returns:
             True if the claim should be verified
@@ -364,8 +377,45 @@ class VerificationConfig:
         if is_critical:
             return True
 
+        # SPEC-16.28: Prioritize claims with uncertainty markers
+        if claim_text and self._has_uncertainty_markers(claim_text):
+            return True
+
         # Use deterministic sampling based on index for reproducibility
         return (claim_index % int(1 / self.sample_rate)) == 0 if self.sample_rate > 0 else False
+
+    def _has_uncertainty_markers(self, claim_text: str) -> bool:
+        """
+        Check if claim text contains uncertainty markers.
+
+        Implements: SPEC-16.28
+
+        Looks for hedging language that indicates the claim
+        should be prioritized for verification.
+        """
+        uncertainty_markers = (
+            "might",
+            "probably",
+            "possibly",
+            "i think",
+            "i believe",
+            "likely",
+            "unlikely",
+            "may ",  # Space to avoid matching "maybe" as prefix
+            "could",
+            "should",
+            "seems",
+            "appears",
+            "suggests",
+            "indicates",
+            "approximately",
+            "roughly",
+            "about ",  # Space to avoid false positives
+            "around ",
+            "estimate",
+        )
+        claim_lower = claim_text.lower()
+        return any(marker in claim_lower for marker in uncertainty_markers)
 
     def get_model_for_claim(self, is_critical: bool) -> str:
         """Get the appropriate model for verifying a claim."""

@@ -656,3 +656,233 @@ class TestRetryWithEvidenceFocus:
         assert hasattr(report, "critical_gaps")
         # Should be list
         assert isinstance(report.critical_gaps, list)
+
+
+class TestClaimFlagging:
+    """Tests for claim flagging on verification failure (SPEC-16.23)."""
+
+    def test_annotate_flagged_claims_method_exists(self) -> None:
+        """
+        @trace SPEC-16.23
+        _annotate_flagged_claims method should exist.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        assert hasattr(orchestrator, "_annotate_flagged_claims")
+        assert callable(orchestrator._annotate_flagged_claims)
+
+    def test_annotate_flagged_claims_returns_original_when_no_flags(self) -> None:
+        """
+        @trace SPEC-16.23
+        Response unchanged when no claims are flagged.
+        """
+        from src.epistemic import HallucinationReport
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        report = HallucinationReport(response_id="test")
+        original = "This is the response text."
+
+        result = orchestrator._annotate_flagged_claims(original, report)
+        assert result == original
+
+    def test_annotate_flagged_claims_adds_markers(self) -> None:
+        """
+        @trace SPEC-16.23
+        Flagged claims should be annotated with uncertainty markers.
+        """
+        from src.epistemic import ClaimVerification, HallucinationReport
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        report = HallucinationReport(response_id="test")
+
+        # Add a flagged claim
+        claim = ClaimVerification(
+            claim_id="c1",
+            claim_text="The API returns JSON",
+            evidence_ids=["e1"],
+            evidence_support=0.3,
+            is_flagged=True,
+            flag_reason="unsupported",
+        )
+        report.add_claim(claim)
+
+        original = "The API returns JSON and handles errors."
+        result = orchestrator._annotate_flagged_claims(original, report)
+
+        assert "[UNVERIFIED:" in result
+        assert "unsupported" in result.lower() or "No supporting evidence" in result
+
+
+class TestAskUserEscalation:
+    """Tests for ask user escalation (SPEC-16.24)."""
+
+    def test_build_ask_user_prompt_method_exists(self) -> None:
+        """
+        @trace SPEC-16.24
+        _build_ask_user_prompt method should exist.
+        """
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        assert hasattr(orchestrator, "_build_ask_user_prompt")
+        assert callable(orchestrator._build_ask_user_prompt)
+
+    def test_build_ask_user_prompt_returns_dict(self) -> None:
+        """
+        @trace SPEC-16.24
+        Ask prompt should return dict with question structure.
+        """
+        from src.epistemic import ClaimVerification, HallucinationReport
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        report = HallucinationReport(response_id="test")
+
+        claim = ClaimVerification(
+            claim_id="c1",
+            claim_text="Unverified claim",
+            evidence_ids=[],
+            evidence_support=0.2,
+            is_flagged=True,
+            flag_reason="unsupported",
+        )
+        report.add_claim(claim)
+
+        result = orchestrator._build_ask_user_prompt(report)
+
+        assert isinstance(result, dict)
+        assert "question" in result
+        assert "header" in result
+        assert "options" in result
+
+    def test_build_ask_user_prompt_includes_options(self) -> None:
+        """
+        @trace SPEC-16.24
+        Ask prompt should include accept/revise/context options.
+        """
+        from src.epistemic import ClaimVerification, HallucinationReport
+        from src.orchestrator.core import RLMOrchestrator
+
+        orchestrator = RLMOrchestrator()
+        report = HallucinationReport(response_id="test")
+
+        claim = ClaimVerification(
+            claim_id="c1",
+            claim_text="Unverified claim",
+            evidence_ids=[],
+            evidence_support=0.2,
+            is_flagged=True,
+            flag_reason="unsupported",
+        )
+        report.add_claim(claim)
+
+        result = orchestrator._build_ask_user_prompt(report)
+
+        options = result["options"]
+        assert len(options) == 3
+        labels = [o["label"] for o in options]
+        assert "Accept response" in labels
+        assert "Request revision" in labels
+        assert "Add context" in labels
+
+
+class TestParallelVerification:
+    """Tests for parallel claim verification (SPEC-16.26)."""
+
+    def test_audit_claims_has_parallel_parameter(self) -> None:
+        """
+        @trace SPEC-16.26
+        audit_claims should accept parallel parameter.
+        """
+        from src.epistemic.evidence_auditor import EvidenceAuditor
+
+        # Check signature
+        import inspect
+
+        sig = inspect.signature(EvidenceAuditor.audit_claims)
+        params = list(sig.parameters.keys())
+        assert "parallel" in params
+
+    def test_verification_config_has_parallel_flag(self) -> None:
+        """
+        @trace SPEC-16.26
+        VerificationConfig should have parallel_verification flag.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig()
+        assert hasattr(config, "parallel_verification")
+        # Should be enabled by default for performance
+        assert config.parallel_verification is True
+
+
+class TestSampleMode:
+    """Tests for sample mode cost control (SPEC-16.28)."""
+
+    def test_should_verify_claim_accepts_claim_text(self) -> None:
+        """
+        @trace SPEC-16.28
+        should_verify_claim should accept optional claim_text.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig(mode="sample")
+
+        # Should accept claim_text parameter
+        result = config.should_verify_claim(0, False, claim_text="Some claim")
+        assert isinstance(result, bool)
+
+    def test_should_verify_claim_prioritizes_uncertainty_markers(self) -> None:
+        """
+        @trace SPEC-16.28
+        Claims with uncertainty markers should be prioritized.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig(mode="sample", sample_rate=0.1)
+
+        # Claim with uncertainty marker should be verified
+        uncertain = config.should_verify_claim(
+            99, False, claim_text="This might be the case"
+        )
+        assert uncertain is True
+
+        # Claim without uncertainty marker at non-sampled index
+        certain = config.should_verify_claim(
+            99, False, claim_text="This is definitely true"
+        )
+        # Index 99 with rate 0.1 -> 99 % 10 != 0, so not sampled
+        assert certain is False
+
+    def test_has_uncertainty_markers_method_exists(self) -> None:
+        """
+        @trace SPEC-16.28
+        _has_uncertainty_markers helper should exist.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig()
+        assert hasattr(config, "_has_uncertainty_markers")
+
+    def test_uncertainty_markers_detection(self) -> None:
+        """
+        @trace SPEC-16.28
+        Should detect common hedging language.
+        """
+        from src.epistemic import VerificationConfig
+
+        config = VerificationConfig()
+
+        # Should detect various uncertainty markers
+        assert config._has_uncertainty_markers("This might be true") is True
+        assert config._has_uncertainty_markers("I think this works") is True
+        assert config._has_uncertainty_markers("It probably returns JSON") is True
+        assert config._has_uncertainty_markers("The function seems correct") is True
+        assert config._has_uncertainty_markers("approximately 100 items") is True
+
+        # Should not flag certain statements
+        assert config._has_uncertainty_markers("The function returns 42") is False
+        assert config._has_uncertainty_markers("This is a fact") is False

@@ -264,35 +264,53 @@ class EvidenceAuditor:
         claims: list[ExtractedClaim],
         evidence: dict[str, str],
         critical_claim_ids: set[str] | None = None,
+        parallel: bool = True,
     ) -> BatchAuditResult:
         """
         Audit multiple claims against available evidence.
+
+        Implements: SPEC-16.26 Parallel claim verification
 
         Args:
             claims: Claims to audit
             evidence: Dict mapping evidence IDs to content
             critical_claim_ids: IDs of claims to use critical model for
+            parallel: Whether to audit claims in parallel (default True)
 
         Returns:
             BatchAuditResult with all verification results
         """
+        import asyncio
+
         critical_ids = critical_claim_ids or set()
-        results: list[AuditResult] = []
-        flagged_count = 0
-        phantom_count = 0
 
-        for claim in claims:
-            is_critical = claim.claim_id in critical_ids or claim.is_critical
-            result = await self.audit_claim(claim, evidence, is_critical)
-            results.append(result)
+        if parallel and len(claims) > 1:
+            # SPEC-16.26: Parallel verification using asyncio.gather
+            tasks = [
+                self.audit_claim(
+                    claim,
+                    evidence,
+                    is_critical=claim.claim_id in critical_ids or claim.is_critical,
+                )
+                for claim in claims
+            ]
+            results = await asyncio.gather(*tasks)
+        else:
+            # Sequential verification
+            results = []
+            for claim in claims:
+                is_critical = claim.claim_id in critical_ids or claim.is_critical
+                result = await self.audit_claim(claim, evidence, is_critical)
+                results.append(result)
 
-            if result.verification.is_flagged:
-                flagged_count += 1
-
-            phantom_count += sum(1 for g in result.gaps if g.gap_type == "phantom_citation")
+        # Aggregate results
+        flagged_count = sum(1 for r in results if r.verification.is_flagged)
+        phantom_count = sum(
+            1 for r in results for g in r.gaps if g.gap_type == "phantom_citation"
+        )
 
         return BatchAuditResult(
-            results=results,
+            results=list(results),
             total_claims=len(claims),
             flagged_count=flagged_count,
             phantom_count=phantom_count,

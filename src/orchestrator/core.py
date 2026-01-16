@@ -515,6 +515,7 @@ class RLMOrchestrator:
             # SPEC-16.24: Escalate to "ask" mode if retries exhausted and still has issues
             if should_retry and retry_count >= max_retries:
                 needs_user_intervention = True
+                ask_prompt = self._build_ask_user_prompt(verification_report)
                 yield TrajectoryEvent(
                     type=TrajectoryEventType.VERIFICATION,
                     depth=0,
@@ -523,6 +524,42 @@ class RLMOrchestrator:
                         "escalation": "ask",
                         "flagged_claims": verification_report.flagged_claim_texts,
                         "critical_gaps": [g.claim_text for g in verification_report.critical_gaps],
+                        "ask_user_prompt": ask_prompt,
+                    },
+                )
+
+            # SPEC-16.23: Flag mode - annotate response with uncertainty markers
+            if (
+                self.verification_config.on_failure == "flag"
+                and verification_report.flagged_claims > 0
+                and state.final_answer
+            ):
+                state.final_answer = self._annotate_flagged_claims(
+                    state.final_answer, verification_report
+                )
+                yield TrajectoryEvent(
+                    type=TrajectoryEventType.VERIFICATION,
+                    depth=0,
+                    content=f"Response annotated with {verification_report.flagged_claims} uncertainty markers",
+                    metadata={"mode": "flag", "annotations_added": verification_report.flagged_claims},
+                )
+
+            # SPEC-16.24: Direct ask mode (no retry)
+            if (
+                self.verification_config.on_failure == "ask"
+                and verification_report.has_critical_gaps
+                and not needs_user_intervention  # Not already escalated from retry
+            ):
+                needs_user_intervention = True
+                ask_prompt = self._build_ask_user_prompt(verification_report)
+                yield TrajectoryEvent(
+                    type=TrajectoryEventType.VERIFICATION,
+                    depth=0,
+                    content=f"Asking user: {verification_report.flagged_claims} claims need verification",
+                    metadata={
+                        "mode": "ask",
+                        "flagged_claims": verification_report.flagged_claim_texts,
+                        "ask_user_prompt": ask_prompt,
                     },
                 )
 
@@ -1138,11 +1175,13 @@ Respond with just the simplified code in a ```python block."""
         extraction_result = await extractor.extract_claims(response)
         claims = extraction_result.claims
 
-        # Apply sampling if in sample mode
+        # Apply sampling if in sample mode (SPEC-16.28)
         if self.verification_config.mode == "sample":
             sampled_claims = [
                 c for i, c in enumerate(claims)
-                if self.verification_config.should_verify_claim(i, c.is_critical)
+                if self.verification_config.should_verify_claim(
+                    i, c.is_critical, claim_text=c.claim_text
+                )
             ]
             claims = sampled_claims
         elif self.verification_config.mode == "critical_only":
@@ -1152,8 +1191,10 @@ Respond with just the simplified code in a ```python block."""
         if claims:
             claims = await extractor.map_claims_to_evidence(claims, evidence)
 
-        # Audit claims
-        audit_result = await auditor.audit_claims(claims, evidence)
+        # Audit claims (SPEC-16.26: parallel verification if enabled)
+        audit_result = await auditor.audit_claims(
+            claims, evidence, parallel=self.verification_config.parallel_verification
+        )
 
         # Build HallucinationReport
         report = HallucinationReport(
@@ -1264,6 +1305,121 @@ Respond with just the simplified code in a ```python block."""
         ])
 
         return "".join(prompt_parts)
+
+    def _annotate_flagged_claims(
+        self,
+        response: str,
+        report: HallucinationReport,
+    ) -> str:
+        """
+        Annotate response with uncertainty markers for flagged claims.
+
+        Implements: SPEC-16.23 Claim flagging on verification failure
+
+        When on_failure="flag", this method annotates the response text
+        with markers indicating which claims could not be verified:
+        - [UNVERIFIED: reason] for flagged claims
+        - [LOW CONFIDENCE] for claims with support below threshold
+
+        Args:
+            response: Original response text
+            report: HallucinationReport with verification results
+
+        Returns:
+            Annotated response with uncertainty markers
+        """
+        if not report.flagged_claim_texts:
+            return response
+
+        annotated = response
+
+        # Find and annotate flagged claims
+        for verification in report.claims:
+            if verification.is_flagged and verification.flag_reason:
+                claim_text = verification.claim_text
+
+                # Create annotation based on flag reason
+                reason_labels = {
+                    "phantom_citation": "UNVERIFIED: Citation not found",
+                    "unsupported": "UNVERIFIED: No supporting evidence",
+                    "contradiction": "DISPUTED: Evidence contradicts this",
+                    "over_extrapolation": "UNCERTAIN: Goes beyond evidence",
+                    "low_dependence": "LOW CONFIDENCE: Weakly supported",
+                    "confidence_mismatch": "UNCERTAIN: Confidence not justified",
+                }
+                label = reason_labels.get(
+                    verification.flag_reason, "UNVERIFIED: Could not verify"
+                )
+
+                # Try to find and annotate the claim in the response
+                # Use simple substring matching (claims are extracted verbatim)
+                if claim_text in annotated:
+                    # Add marker after the claim
+                    annotated = annotated.replace(
+                        claim_text,
+                        f"{claim_text} [{label}]",
+                        1,  # Only replace first occurrence
+                    )
+
+        return annotated
+
+    def _build_ask_user_prompt(
+        self,
+        report: HallucinationReport,
+    ) -> dict[str, Any]:
+        """
+        Build prompt for user escalation when verification fails.
+
+        Implements: SPEC-16.24 Ask user escalation
+
+        When retry fails or on_failure="ask", present flagged claims
+        to the user and allow them to:
+        1. Accept the response despite flags
+        2. Request specific clarifications
+        3. Provide additional evidence
+
+        Args:
+            report: HallucinationReport with verification results
+
+        Returns:
+            Dict with question text and options for AskUserQuestion
+        """
+        flagged = report.flagged_claim_texts[:5]  # Limit to 5 claims
+        gaps = report.critical_gaps[:3]  # Top 3 critical gaps
+
+        # Build question content
+        question_parts = [
+            "Some claims in the response could not be verified:\n\n",
+        ]
+
+        for i, claim in enumerate(flagged, 1):
+            question_parts.append(f"{i}. {claim[:100]}{'...' if len(claim) > 100 else ''}\n")
+
+        if gaps:
+            question_parts.append("\nCritical issues found:\n")
+            for gap in gaps:
+                question_parts.append(f"- {gap.gap_type}: {gap.suggested_action}\n")
+
+        question_text = "".join(question_parts)
+
+        return {
+            "question": f"{question_text}\nHow would you like to proceed?",
+            "header": "Verification",
+            "options": [
+                {
+                    "label": "Accept response",
+                    "description": "Accept the response despite unverified claims",
+                },
+                {
+                    "label": "Request revision",
+                    "description": "Ask for a revised response addressing the issues",
+                },
+                {
+                    "label": "Add context",
+                    "description": "Provide additional context or evidence",
+                },
+            ],
+        }
 
 
 __all__ = [
