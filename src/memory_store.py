@@ -2,6 +2,8 @@
 Persistent hypergraph memory with SQLite storage.
 
 Implements: Spec SPEC-02 Memory Foundation
+
+Migration: When USE_RLM_CORE=true, delegates to rlm_core.MemoryStore
 """
 
 from __future__ import annotations
@@ -14,6 +16,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
+
+from .config import USE_RLM_CORE
+
+# Conditional import of rlm_core bindings
+_rlm_core = None
+if USE_RLM_CORE:
+    try:
+        import rlm_core as _rlm_core
+    except ImportError:
+        import warnings
+        warnings.warn(
+            "RLM_USE_CORE=true but rlm_core not installed. "
+            "Falling back to Python implementation."
+        )
+        _rlm_core = None
 
 # =============================================================================
 # Data Classes
@@ -218,6 +235,9 @@ class MemoryStore:
     - Node CRUD operations with tier system
     - Hyperedge support for many-to-many relationships
     - Evolution logging for tier transitions
+
+    Migration: When USE_RLM_CORE=true, delegates core operations to rlm_core.MemoryStore
+    while maintaining API compatibility.
     """
 
     # Valid node types (SPEC-02.05)
@@ -272,8 +292,27 @@ class MemoryStore:
             db_path = os.environ.get("RLM_MEMORY_DB") or self._get_default_db_path()
 
         self.db_path = db_path
+
+        # Initialize rlm_core backend if available
+        self._core_store: Any = None
+        if _rlm_core is not None:
+            try:
+                self._core_store = _rlm_core.MemoryStore.open(db_path)
+            except Exception as e:
+                import warnings
+                warnings.warn(f"Failed to initialize rlm_core.MemoryStore: {e}. Falling back to Python.")
+                self._core_store = None
+
+        # Initialize Python backend only if rlm_core is not handling the database
+        # This avoids schema conflicts between the two implementations
         self._ensure_directory()
-        self._init_database()
+        if self._core_store is None:
+            self._init_database()
+
+    @property
+    def uses_rlm_core(self) -> bool:
+        """Return True if using rlm_core backend."""
+        return self._core_store is not None
 
     def _get_default_db_path(self) -> str:
         """
@@ -312,6 +351,69 @@ class MemoryStore:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.row_factory = sqlite3.Row
         return conn
+
+    # =========================================================================
+    # rlm_core Delegation Helpers
+    # =========================================================================
+
+    def _map_node_type_to_core(self, node_type: str) -> Any:
+        """Map Python node type string to rlm_core.NodeType enum."""
+        if _rlm_core is None:
+            raise RuntimeError("rlm_core not available")
+        mapping = {
+            "entity": _rlm_core.NodeType.Entity,
+            "fact": _rlm_core.NodeType.Fact,
+            "experience": _rlm_core.NodeType.Experience,
+            "decision": _rlm_core.NodeType.Decision,
+            "snippet": _rlm_core.NodeType.Snippet,
+        }
+        return mapping.get(node_type, _rlm_core.NodeType.Fact)
+
+    def _map_tier_to_core(self, tier: str) -> Any:
+        """Map Python tier string to rlm_core.Tier enum."""
+        if _rlm_core is None:
+            raise RuntimeError("rlm_core not available")
+        mapping = {
+            "task": _rlm_core.Tier.Task,
+            "session": _rlm_core.Tier.Session,
+            "longterm": _rlm_core.Tier.LongTerm,
+            "archive": _rlm_core.Tier.Archive,
+        }
+        return mapping.get(tier, _rlm_core.Tier.Task)
+
+    def _create_node_core(
+        self,
+        node_type: str,
+        content: str,
+        tier: str,
+    ) -> str:
+        """Create a node using rlm_core backend."""
+        if _rlm_core is None or self._core_store is None:
+            raise RuntimeError("rlm_core not available")
+
+        node = _rlm_core.Node(
+            content=content,
+            node_type=self._map_node_type_to_core(node_type),
+            tier=self._map_tier_to_core(tier),
+        )
+        return self._core_store.add_node(node)
+
+    def _search_core(self, query: str, limit: int) -> list["SearchResult"]:
+        """Search using rlm_core backend."""
+        if _rlm_core is None or self._core_store is None:
+            raise RuntimeError("rlm_core not available")
+
+        results = self._core_store.search_content(query, limit)
+        return [
+            SearchResult(
+                node_id=str(node.id)[:8] + "...",  # Truncate for display
+                content=node.content,
+                node_type=str(node.node_type).lower(),
+                bm25_score=0.0,  # rlm_core uses different scoring
+                snippet=node.content[:100] if len(node.content) > 100 else node.content,
+            )
+            for node in results
+        ]
 
     # =========================================================================
     # Node CRUD Operations (SPEC-02.20-24)
@@ -385,6 +487,15 @@ class MemoryStore:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got: {confidence}")
 
+        # Delegate to rlm_core if available
+        if self._core_store is not None:
+            return self._create_node_core(
+                node_type=node_type,
+                content=content,
+                tier=tier,
+            )
+
+        # Python implementation fallback
         # Generate UUID (SPEC-02.09)
         node_id = str(uuid.uuid4())
 
@@ -1770,6 +1881,13 @@ class MemoryStore:
             node_type = type
         if not query or not query.strip():
             return []
+
+        # Delegate to rlm_core if available (for basic search without filters)
+        if self._core_store is not None and node_type is None and min_confidence is None:
+            try:
+                return self._search_core(query, limit)
+            except Exception:
+                pass  # Fall back to Python implementation
 
         conn = self._get_connection()
         try:
