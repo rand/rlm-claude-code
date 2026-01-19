@@ -4,8 +4,75 @@ This guide walks through testing session isolation with two Claude Code terminal
 
 ## Prerequisites
 
-1. Hooks configured at `~/.claude/hooks.json` pointing to local fork
-2. Virtual environment set up at `~/src/rlm-claude-code/.venv`
+### 1. Clone the fork with session isolation
+
+```bash
+git clone https://github.com/narailabs/rlm-claude-code.git ~/src/rlm-claude-code
+cd ~/src/rlm-claude-code
+git checkout feature/session-isolation
+```
+
+### 2. Install dependencies
+
+```bash
+cd ~/src/rlm-claude-code
+uv sync --all-extras --python 3.12
+```
+
+Verify the installation:
+```bash
+.venv/bin/python -c "from src.memory_store import MemoryStore; print('OK')"
+```
+
+### 3. Configure Claude Code hooks
+
+Create or update `~/.claude/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/YOUR_USERNAME/src/rlm-claude-code && .venv/bin/python scripts/init_rlm.py",
+            "timeout": 5000,
+            "description": "Initialize RLM environment"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/YOUR_USERNAME/src/rlm-claude-code && .venv/bin/python scripts/sync_context.py",
+            "timeout": 2000,
+            "description": "Sync tool context with RLM state"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Important:** Replace `YOUR_USERNAME` with your actual username (e.g., `narayan`).
+
+### 4. Verify hooks are loaded
+
+Start a new Claude Code session and check for the "RLM initialized" message in stderr, or run:
+```bash
+cat ~/.claude/rlm-config.json
+```
+
+If the file exists, RLM is initializing correctly.
+
+---
 
 ## Setup
 
