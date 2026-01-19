@@ -228,6 +228,7 @@ class IntelligentOrchestrator:
         available_models: list[str] | None = None,
         telemetry: Any | None = None,
         memory_store: MemoryStore | None = None,
+        session_id: str | None = None,
     ):
         """
         Initialize the intelligent orchestrator.
@@ -238,6 +239,7 @@ class IntelligentOrchestrator:
             available_models: List of available model names
             telemetry: Optional OrchestrationTelemetry for heuristic tracking
             memory_store: Optional MemoryStore for memory-augmented orientation
+            session_id: Session ID for memory isolation (task/session tiers)
         """
         self._client = client
         self.config = config or OrchestratorConfig()
@@ -248,6 +250,7 @@ class IntelligentOrchestrator:
         self._decision_logger: Any = None  # Lazy initialized
         self._telemetry = telemetry  # OrchestrationTelemetry for per-heuristic tracking
         self._memory_store = memory_store  # For memory-augmented orientation (SPEC-12.04)
+        self._session_id = session_id  # For memory isolation
         self._stats = {
             "llm_decisions": 0,
             "local_decisions": 0,
@@ -332,6 +335,7 @@ class IntelligentOrchestrator:
                 node_type="experience",
                 tier="session",  # Prioritize recent session experiences
                 limit=3,
+                session_id=self._session_id,  # Session isolation
             )
             for exp in experiences:
                 # Check if experience was successful and has strategy metadata
