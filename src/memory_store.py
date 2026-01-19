@@ -570,6 +570,7 @@ class MemoryStore:
         min_confidence: float | None = None,
         limit: int | None = None,
         include_archived: bool = False,
+        session_id: str | None = None,
     ) -> list[Node]:
         """
         Query nodes with filters.
@@ -580,8 +581,9 @@ class MemoryStore:
             node_type: Filter by node type
             tier: Filter by tier
             min_confidence: Minimum confidence threshold
-            limit: Maximum number of results
+            limit: Maximum number of results (default 100 to prevent context flooding)
             include_archived: Include archived nodes
+            session_id: Filter by session for task/session tiers (ignored for longterm/archive)
 
         Returns:
             List of matching nodes
@@ -600,6 +602,12 @@ class MemoryStore:
             conditions.append("tier = ?")
             values.append(tier)
 
+            # Session isolation for task/session tiers only
+            # Longterm and archive tiers are shared across all sessions
+            if tier in ("task", "session") and session_id is not None:
+                conditions.append("json_extract(metadata, '$.session_id') = ?")
+                values.append(session_id)
+
         if min_confidence is not None:
             conditions.append("confidence >= ?")
             values.append(min_confidence)
@@ -608,11 +616,13 @@ class MemoryStore:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        query += " ORDER BY last_accessed DESC"
+        # Order by confidence DESC first (most relevant), then last_accessed DESC
+        query += " ORDER BY confidence DESC, last_accessed DESC"
 
-        if limit is not None:
-            query += " LIMIT ?"
-            values.append(limit)
+        # Default limit to prevent context flooding
+        effective_limit = limit if limit is not None else 100
+        query += " LIMIT ?"
+        values.append(effective_limit)
 
         conn = self._get_connection()
         try:
