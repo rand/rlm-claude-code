@@ -193,6 +193,7 @@ class RLMEnvironment:
 
         # Memory store (initialized via enable_memory())
         self._memory_store: MemoryStore | None = None
+        self._session_id: str | None = None
 
     def _guarded_getitem(self, obj: Any, key: Any) -> Any:
         """
@@ -1615,7 +1616,7 @@ class RLMEnvironment:
                 "success": False,
             }
 
-    def enable_memory(self, store: MemoryStore) -> None:
+    def enable_memory(self, store: MemoryStore, session_id: str | None = None) -> None:
         """
         Enable memory functions in the REPL environment.
 
@@ -1623,8 +1624,10 @@ class RLMEnvironment:
 
         Args:
             store: MemoryStore instance to use for persistence
+            session_id: Session ID for memory isolation (task/session tiers)
         """
         self._memory_store = store
+        self._session_id = session_id
 
         # Add memory functions to globals
         self.globals["memory_query"] = self._memory_query
@@ -1633,7 +1636,9 @@ class RLMEnvironment:
         self.globals["memory_get_context"] = self._memory_get_context
         self.globals["memory_relate"] = self._memory_relate
 
-    def _memory_query(self, query: str, limit: int = 10) -> list[Any]:
+    def _memory_query(
+        self, query: str, limit: int = 10, tier: str | None = None
+    ) -> list[Any]:
         """
         Search for nodes matching a query.
 
@@ -1642,6 +1647,7 @@ class RLMEnvironment:
         Args:
             query: Search query string
             limit: Maximum number of results to return
+            tier: Optional tier filter (task, session, longterm, archive)
 
         Returns:
             List of matching Node objects
@@ -1649,8 +1655,12 @@ class RLMEnvironment:
         if self._memory_store is None:
             return []
 
-        # Query nodes that contain the search terms
-        all_nodes = self._memory_store.query_nodes(limit=limit * 3)
+        # Query nodes with session isolation for task/session tiers
+        all_nodes = self._memory_store.query_nodes(
+            limit=limit * 3,
+            tier=tier,
+            session_id=self._session_id,
+        )
 
         # Filter by query terms
         query_lower = query.lower()
@@ -1666,7 +1676,9 @@ class RLMEnvironment:
         matching.sort(key=lambda n: n.confidence, reverse=True)
         return matching[:limit]
 
-    def _memory_add_fact(self, content: str, confidence: float = 0.5) -> str:
+    def _memory_add_fact(
+        self, content: str, confidence: float = 0.5, tier: str = "task"
+    ) -> str:
         """
         Add a fact to memory.
 
@@ -1675,6 +1687,7 @@ class RLMEnvironment:
         Args:
             content: Fact content
             confidence: Confidence score (0.0 to 1.0)
+            tier: Memory tier (task, session, longterm). Default is task.
 
         Returns:
             Node ID of created fact
@@ -1682,13 +1695,22 @@ class RLMEnvironment:
         if self._memory_store is None:
             raise RuntimeError("Memory not enabled. Call enable_memory() first.")
 
+        # Include session_id in metadata for session isolation
+        metadata = {}
+        if self._session_id:
+            metadata["session_id"] = self._session_id
+
         return self._memory_store.create_node(
             node_type="fact",
             content=content,
             confidence=confidence,
+            tier=tier,
+            metadata=metadata,
         )
 
-    def _memory_add_experience(self, content: str, outcome: str, success: bool) -> str:
+    def _memory_add_experience(
+        self, content: str, outcome: str, success: bool, tier: str = "session"
+    ) -> str:
         """
         Add an experience to memory.
 
@@ -1698,6 +1720,7 @@ class RLMEnvironment:
             content: Experience description
             outcome: Outcome description
             success: Whether the experience was successful
+            tier: Memory tier (task, session, longterm). Default is session.
 
         Returns:
             Node ID of created experience
@@ -1705,13 +1728,19 @@ class RLMEnvironment:
         if self._memory_store is None:
             raise RuntimeError("Memory not enabled. Call enable_memory() first.")
 
+        # Include session_id in metadata for session isolation
+        metadata = {"outcome": outcome, "success": success}
+        if self._session_id:
+            metadata["session_id"] = self._session_id
+
         return self._memory_store.create_node(
             node_type="experience",
             content=content,
-            metadata={"outcome": outcome, "success": success},
+            tier=tier,
+            metadata=metadata,
         )
 
-    def _memory_get_context(self, limit: int = 10) -> list[Any]:
+    def _memory_get_context(self, limit: int = 10, tier: str | None = None) -> list[Any]:
         """
         Get recent/relevant context nodes.
 
@@ -1719,6 +1748,7 @@ class RLMEnvironment:
 
         Args:
             limit: Maximum number of nodes to return
+            tier: Optional tier filter (task, session, longterm, archive)
 
         Returns:
             List of Node objects sorted by confidence
@@ -1726,8 +1756,12 @@ class RLMEnvironment:
         if self._memory_store is None:
             return []
 
-        # Get nodes sorted by confidence (high to low)
-        nodes = self._memory_store.query_nodes(limit=limit * 2)
+        # Get nodes sorted by confidence (high to low) with session isolation
+        nodes = self._memory_store.query_nodes(
+            limit=limit * 2,
+            tier=tier,
+            session_id=self._session_id,
+        )
 
         # Sort by confidence descending
         nodes.sort(key=lambda n: n.confidence, reverse=True)
