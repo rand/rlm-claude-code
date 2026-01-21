@@ -2,12 +2,14 @@ Toggle or configure RLM (Recursive Language Model) mode.
 
 ## Usage
 
-- `/rlm` — Show current RLM status and configuration
-- `/rlm on` — Force RLM mode for this session
-- `/rlm off` — Disable RLM mode (use standard Claude Code)
-- `/rlm auto` — Use complexity-based activation (default)
-- `/rlm verbose` — Enable verbose trajectory output
-- `/rlm debug` — Enable debug trajectory output with full content
+- `/rlm-claude-code:rlm` — Show current RLM status and configuration
+- `/rlm-claude-code:rlm on` — Force RLM mode for this session
+- `/rlm-claude-code:rlm off` — Disable RLM mode (use standard Claude Code)
+- `/rlm-claude-code:rlm auto` — Use complexity-based activation (default)
+- `/rlm-claude-code:rlm verbose` — Enable verbose trajectory output
+- `/rlm-claude-code:rlm debug` — Enable debug trajectory output with full content
+
+> **Tip**: You can create a shell alias: `alias rlm='claude skill rlm-claude-code:rlm'`
 
 ## Current Configuration
 
@@ -40,6 +42,6 @@ Force RLM off when:
 
 ## Related Commands
 
-- `/rlm-orchestrator` — Launch RLM orchestrator agent for complex context tasks
-- `/simple` — Bypass RLM for a single operation
-- `/trajectory <file>` — Analyze a saved trajectory
+- `/rlm-claude-code:rlm-orchestrator` — Launch RLM orchestrator agent for complex context tasks
+- `/rlm-claude-code:simple` — Bypass RLM for a single operation
+- `/rlm-claude-code:trajectory <file>` — Analyze a saved trajectory

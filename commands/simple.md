@@ -2,16 +2,16 @@ Bypass RLM mode for a simple operation.
 
 ## Usage
 
-`/simple [command]` — Execute command without RLM orchestration
+`/rlm-claude-code:simple [command]` — Execute command without RLM orchestration
 
 ## When to Use
 
-Use `/simple` when you know the task doesn't need RLM's context decomposition:
+Use `/rlm-claude-code:simple` when you know the task doesn't need RLM's context decomposition:
 
-- Quick file reads: `/simple show package.json`
-- Simple commands: `/simple run npm test`
-- Git operations: `/simple git status`
-- Acknowledgments: `/simple yes, continue`
+- Quick file reads: `/rlm-claude-code:simple show package.json`
+- Simple commands: `/rlm-claude-code:simple run npm test`
+- Git operations: `/rlm-claude-code:simple git status`
+- Acknowledgments: `/rlm-claude-code:simple yes, continue`
 
 ## How It Works
 
@@ -25,15 +25,15 @@ The `/simple` prefix tells RLM to skip complexity analysis and execute directly 
 ## Examples
 
 ```
-/simple cat README.md
-/simple git diff HEAD~1
-/simple npm install lodash
-/simple ls -la src/
+/rlm-claude-code:simple cat README.md
+/rlm-claude-code:simple git diff HEAD~1
+/rlm-claude-code:simple npm install lodash
+/rlm-claude-code:simple ls -la src/
 ```
 
 ## When NOT to Use
 
-Don't use `/simple` for:
+Don't use `/rlm-claude-code:simple` for:
 - Multi-file operations
 - Debugging with large output
 - Refactoring tasks

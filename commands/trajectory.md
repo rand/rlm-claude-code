@@ -2,7 +2,7 @@ Analyze an RLM trajectory file.
 
 ## Usage
 
-`/trajectory [path]` — Analyze trajectory at path (default: last trajectory)
+`/rlm-claude-code:trajectory [path]` — Analyze trajectory at path (default: last trajectory)
 
 ## Analysis Output
 
