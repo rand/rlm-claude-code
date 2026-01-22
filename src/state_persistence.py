@@ -13,6 +13,8 @@ Handles:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -125,7 +127,10 @@ class StatePersistence:
 
     def save_state(self, session_id: str | None = None) -> Path:
         """
-        Save current state to disk.
+        Save current state to disk using atomic write.
+
+        Uses write-to-temp-then-rename pattern to prevent corruption
+        from concurrent writes by multiple hook processes.
 
         Args:
             session_id: Session ID (uses current if not provided)
@@ -140,8 +145,7 @@ class StatePersistence:
         self._current_state.updated_at = time.time()
 
         state_file = self.get_state_file(session_id)
-        with open(state_file, "w") as f:
-            json.dump(self._current_state.to_dict(), f, indent=2)
+        self._atomic_json_write(state_file, self._current_state.to_dict())
 
         # Also save context if available
         if self._current_context is not None:
@@ -149,8 +153,34 @@ class StatePersistence:
 
         return state_file
 
+    def _atomic_json_write(self, target_path: Path, data: dict) -> None:
+        """
+        Write JSON atomically using temp file + rename.
+
+        This prevents corruption when multiple processes write concurrently.
+        The rename operation is atomic on POSIX systems.
+        """
+        # Write to temp file in same directory (ensures same filesystem for rename)
+        fd, temp_path = tempfile.mkstemp(
+            suffix=".tmp",
+            prefix=target_path.stem + "_",
+            dir=target_path.parent,
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+            # Atomic rename
+            os.rename(temp_path, target_path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+
     def _save_context(self, session_id: str) -> Path:
-        """Save context to disk."""
+        """Save context to disk using atomic write."""
         if self._current_context is None:
             raise ValueError("No context to save")
 
@@ -175,8 +205,7 @@ class StatePersistence:
             "working_memory": self._current_context.working_memory,
         }
 
-        with open(context_file, "w") as f:
-            json.dump(context_data, f, indent=2)
+        self._atomic_json_write(context_file, context_data)
 
         return context_file
 

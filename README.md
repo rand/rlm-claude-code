@@ -155,16 +155,33 @@ Final Answer
 
 ## rlm-core Integration (Optional)
 
-RLM-Claude-Code optionally integrates with the [rlm-core](https://github.com/rand/loop) Rust library for improved performance. This is controlled by the `RLM_USE_CORE` environment variable.
+RLM-Claude-Code optionally integrates with the [rlm-core](https://github.com/rand/loop) Rust library for improved performance.
 
-### Feature Flag
+### Enabling rlm-core
 
-| `RLM_USE_CORE` | Behavior |
-|----------------|----------|
-| `true` | Use rlm-core Rust bindings (requires installation) |
-| `false` or unset | Use Python fallback (default, always works) |
+There are two ways to enable rlm-core (in priority order):
 
-When `RLM_USE_CORE=true` but rlm-core is not installed, a warning is logged and Python fallback is used.
+**1. Environment variable** (highest priority, good for testing):
+```bash
+export RLM_USE_CORE=true
+```
+
+**2. Config file** (persistent, recommended for regular use):
+
+Add `"use_rlm_core": true` to `~/.claude/rlm-config.json`:
+```json
+{
+  "use_rlm_core": true,
+  "activation": { ... }
+}
+```
+
+| Setting | Behavior |
+|---------|----------|
+| `use_rlm_core: true` | Use rlm-core Rust bindings (requires installation) |
+| `use_rlm_core: false` or unset | Use Python fallback (default, always works) |
+
+When rlm-core is enabled but not installed, a warning is logged and Python fallback is used automatically.
 
 ### Performance Comparison
 
@@ -382,6 +399,7 @@ RLM stores configuration at `~/.claude/rlm-config.json`:
 
 ```json
 {
+  "use_rlm_core": true,
   "activation": {
     "mode": "complexity",
     "fallback_token_threshold": 80000
@@ -396,6 +414,13 @@ RLM stores configuration at `~/.claude/rlm-config.json`:
   }
 }
 ```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `use_rlm_core` | bool | Enable rlm-core Rust bindings (default: `false`) |
+| `activation.mode` | string | `"micro"`, `"complexity"`, `"always"`, `"manual"` |
+| `depth.default` | int | Default recursion depth (1-3) |
+| `trajectory.verbosity` | string | `"minimal"`, `"normal"`, `"verbose"`, `"debug"` |
 
 ### Environment Variables
 

@@ -10,9 +10,40 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+
+def _get_use_rlm_core() -> bool:
+    """
+    Determine whether to use rlm-core Rust bindings.
+
+    Priority order:
+    1. RLM_USE_CORE environment variable (if set)
+    2. use_rlm_core setting in ~/.claude/rlm-config.json
+    3. Default: False
+
+    Returns:
+        True if rlm-core should be used, False otherwise.
+    """
+    # Check environment variable first (highest priority)
+    env_value = os.getenv("RLM_USE_CORE")
+    if env_value is not None:
+        return env_value.lower() == "true"
+
+    # Check config file
+    config_path = Path.home() / ".claude" / "rlm-config.json"
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                data = json.load(f)
+            return data.get("use_rlm_core", False)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return False
+
+
 # Feature flag for rlm-core migration
-# Set RLM_USE_CORE=true to use rlm-core Rust bindings instead of Python implementations
-USE_RLM_CORE = os.getenv("RLM_USE_CORE", "false").lower() == "true"
+# Set RLM_USE_CORE=true env var or use_rlm_core=true in config to enable
+USE_RLM_CORE = _get_use_rlm_core()
 
 if TYPE_CHECKING:
     from .epistemic.types import VerificationConfig as VerificationConfigType
