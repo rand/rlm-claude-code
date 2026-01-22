@@ -535,6 +535,60 @@ RLM integrates with Claude Code via hooks:
 | `PreCompact` | `externalize_context.py` | Externalize before compaction |
 | `Stop` | `save_trajectory.py` | Save trajectory on session end |
 
+### Hook Setup (Important!)
+
+Claude Code plugins register hooks in `hooks/hooks.json`, but these need to be merged into your global `~/.claude/settings.json` to take effect.
+
+**After installing or updating this plugin, run:**
+
+```bash
+python3 ~/.claude/scripts/merge-plugin-hooks.py
+```
+
+If you don't have the merge script, create it:
+
+```bash
+mkdir -p ~/.claude/scripts
+curl -o ~/.claude/scripts/merge-plugin-hooks.py \
+  https://raw.githubusercontent.com/rand/rlm-claude-code/main/scripts/merge-plugin-hooks.py
+```
+
+### Hook Path Design
+
+This plugin uses `${CLAUDE_PLUGIN_ROOT}` variable and `.venv/bin/python` (not `uv run`) to ensure hooks work correctly:
+
+- **`${CLAUDE_PLUGIN_ROOT}`** - Expands to the plugin's install path, ensuring hooks work after updates
+- **`.venv/bin/python`** - Direct venv Python, avoiding `uv run` sandbox issues on macOS
+
+### Verifying Hooks
+
+Check hooks are correctly registered:
+
+```bash
+# See which hooks are active
+cat ~/.claude/settings.json | jq '.hooks.SessionStart'
+
+# Verify paths point to current version
+cat ~/.claude/plugins/installed_plugins.json | jq '.plugins["rlm-claude-code@rlm-claude-code"][0].version'
+```
+
+If hook paths don't match the installed version, re-run the merge script.
+
+### Troubleshooting Hooks
+
+**"RLM not initializing"**
+1. Run `python3 ~/.claude/scripts/merge-plugin-hooks.py`
+2. Restart Claude Code
+3. Check: `cat ~/.claude/settings.json | jq '.hooks.SessionStart'`
+
+**Hooks pointing to old version**
+- This happens after plugin updates
+- Run `python3 ~/.claude/scripts/merge-plugin-hooks.py` after each update
+
+**macOS sandbox errors with uv**
+- This plugin already uses `.venv/bin/python` to avoid this issue
+- If you see `SCDynamicStore` errors, verify hooks don't use `uv run`
+
 ---
 
 ## Development
