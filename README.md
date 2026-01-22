@@ -645,23 +645,61 @@ rlm-claude-code/
 └── docs/                         # Documentation
 ```
 
+### Running Tests
+
+The test suite has 3,200+ tests including property-based tests (Hypothesis) and benchmarks.
+
+**Quick iteration** (~30 seconds):
+```bash
+# Fast mode - 10 examples per property test
+HYPOTHESIS_PROFILE=fast uv run pytest tests/unit/ -v
+```
+
+**Standard development** (default, ~2-3 minutes):
+```bash
+# Dev mode - 50 examples per property test
+uv run pytest tests/ -v
+```
+
+**Full CI run** (~5+ minutes):
+```bash
+# CI mode - 100 examples, all phases
+HYPOTHESIS_PROFILE=ci uv run pytest tests/ -v
+```
+
+**Benchmarks** (run separately, ~1-2 minutes):
+```bash
+# Performance benchmarks
+uv run pytest tests/benchmarks/ --benchmark-only
+```
+
+### Hypothesis Profiles
+
+| Profile | Examples | Use Case |
+|---------|----------|----------|
+| `fast` | 10 | Quick iteration, TDD |
+| `dev` | 50 | Local development (default) |
+| `ci` | 100 | CI/CD, thorough testing |
+
+Set via environment: `HYPOTHESIS_PROFILE=fast pytest ...`
+
 ### Test Categories
 
 ```bash
-# Unit tests
+# Unit tests only (fastest)
 uv run pytest tests/unit/ -v
 
 # Integration tests
 uv run pytest tests/integration/ -v
 
 # Property-based tests
-uv run pytest tests/property/ -v -m hypothesis
+uv run pytest tests/property/ -v
 
 # Security tests
 uv run pytest tests/security/ -v
 
-# Benchmarks
-uv run pytest tests/benchmarks/ --benchmark-only
+# Include benchmarks (excluded by default)
+uv run pytest tests/ tests/benchmarks/ --benchmark-only
 ```
 
 ---

@@ -94,7 +94,8 @@ markers = [
     "slow: tests that take >1s",
     "security: security-related tests",
 ]
-addopts = "-v --tb=short"
+# Default: skip benchmarks (run explicitly with: pytest tests/benchmarks/ --benchmark-only)
+addopts = "-v --tb=short --ignore=tests/benchmarks/"
 
 [tool.coverage.run]
 source = ["src"]
