@@ -1,0 +1,104 @@
+name: Build Hook Binaries
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        cache: true
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v -race ./...
+
+    - name: Build all platforms
+      run: |
+        mkdir -p bin
+
+        CMDS="session-init complexity-check trajectory-save"
+
+        for cmd in $CMDS; do
+          [ -d "cmd/$cmd" ] || continue
+
+          echo "Building $cmd..."
+
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath \
+            -o "bin/${cmd}-darwin-arm64" "./cmd/$cmd"
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath \
+            -o "bin/${cmd}-darwin-amd64" "./cmd/$cmd"
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath \
+            -o "bin/${cmd}-linux-amd64" "./cmd/$cmd"
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath \
+            -o "bin/${cmd}-linux-arm64" "./cmd/$cmd"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath \
+            -o "bin/${cmd}-windows-amd64.exe" "./cmd/$cmd"
+        done
+
+        ls -la bin/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: hook-binaries
+        path: bin/
+        retention-days: 7
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: hook-binaries
+        path: bin/
+
+    - name: Create archives
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        mkdir -p dist
+
+        cd bin
+
+        tar -czvf "../dist/hooks-${VERSION}-darwin-arm64.tar.gz" *-darwin-arm64 2>/dev/null || true
+        tar -czvf "../dist/hooks-${VERSION}-darwin-amd64.tar.gz" *-darwin-amd64 2>/dev/null || true
+        tar -czvf "../dist/hooks-${VERSION}-linux-amd64.tar.gz" *-linux-amd64 2>/dev/null || true
+        tar -czvf "../dist/hooks-${VERSION}-linux-arm64.tar.gz" *-linux-arm64 2>/dev/null || true
+        zip "../dist/hooks-${VERSION}-windows-amd64.zip" *-windows-amd64.exe 2>/dev/null || true
+
+        cd ..
+        ls -la dist/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

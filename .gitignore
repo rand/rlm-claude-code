@@ -56,3 +56,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .hypothesis/
+
+# Go build output
+bin/

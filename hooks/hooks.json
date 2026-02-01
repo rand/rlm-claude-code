@@ -6,9 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/init_rlm.py\"",
-            "timeout": 5000,
-            "description": "Initialize RLM environment and load config"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" session-init",
+            "timeout": 10000,
+            "description": "Initialize RLM environment via Go binary (venv bootstrap, DP phase awareness)"
           }
         ]
       }
@@ -18,10 +18,9 @@
         "matcher": ".*",
         "hooks": [
           {
-            "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/check_complexity.py\" \"$PROMPT\"",
-            "timeout": 3000,
-            "description": "Check if RLM should activate based on task complexity"
+            "type": "prompt",
+            "prompt": "You have access to RLM (Recursive Language Model) for complex tasks. If the user's request involves multi-file analysis, debugging complex issues, architectural decisions, or exhaustive searches, consider activating RLM with `/rlm mode balanced` or `/rlm mode thorough`. For simple tasks, RLM micro mode runs automatically. Do not mention RLM unless the task complexity warrants it.",
+            "description": "RLM activation guidance based on task complexity"
           }
         ]
       }
@@ -32,9 +31,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/sync_context.py\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" complexity-check",
             "timeout": 2000,
-            "description": "Sync tool context with RLM state"
+            "description": "Check context complexity for RLM activation via Go binary"
           }
         ]
       }
@@ -44,10 +43,9 @@
         "matcher": ".*",
         "hooks": [
           {
-            "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_output.py\"",
-            "timeout": 2000,
-            "description": "Capture tool output for RLM context"
+            "type": "prompt",
+            "prompt": "If the tool output reveals unexpected complexity (large error traces, many files affected, cross-module dependencies), consider suggesting RLM escalation to the user.",
+            "description": "Post-tool RLM escalation check"
           }
         ]
       }
@@ -57,10 +55,9 @@
         "matcher": ".*",
         "hooks": [
           {
-            "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/externalize_context.py\"",
-            "timeout": 10000,
-            "description": "Externalize context before compaction"
+            "type": "prompt",
+            "prompt": "Before compaction, ensure any active RLM context (trajectory, memory state, orchestration state) has been externalized. If RLM is active, save trajectory with `/rlm save`.",
+            "description": "Externalize RLM context before compaction"
           }
         ]
       }
@@ -71,9 +68,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_ROOT}\" && .venv/bin/python \"${CLAUDE_PLUGIN_ROOT}/scripts/save_trajectory.py\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" trajectory-save",
             "timeout": 5000,
-            "description": "Save trajectory on session end"
+            "description": "Save RLM trajectory on session end via Go binary"
           }
         ]
       }
