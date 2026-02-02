@@ -13,9 +13,16 @@
 - Unit tests for hookio, events, and config packages
 
 ### Changed
+- **rlm-core enabled by default** (`USE_RLM_CORE=true`) — set `RLM_USE_CORE=false` to disable
+- rlm-core PyO3 bindings now support metadata, provenance, and embedding parameters
+- rlm-core uses separate `-core.db` file to avoid schema conflicts with Python SQLite
 - hooks.json now uses Go binaries + prompt-based hooks
 - Complexity check responds to all DP phases (not just spec/review)
 - RLM orchestrator agent informed about parallel tool call behavior
+- session-init verifies rlm_core is importable on startup
+
+### Fixed
+- Hyperedge queries used `row["type"]` instead of `row["edge_type"]` matching SQLite schema
 
 ### Deprecated
 - Python hook scripts moved to `scripts/legacy/`
