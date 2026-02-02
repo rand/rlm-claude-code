@@ -20,11 +20,6 @@ try:
 except ImportError:
     HAS_RLM_CORE = False
 
-# Skip reason for tests that require Python backend features
-requires_python_backend = pytest.mark.skipif(
-    HAS_RLM_CORE,
-    reason="Test requires Python backend (metadata support not available in rlm_core)",
-)
 
 
 # =============================================================================
@@ -54,7 +49,7 @@ def temp_db_path():
 class TestMemorySystemIntegration:
     """Integration tests for the complete memory system."""
 
-    @requires_python_backend
+
     def test_memory_store_to_evolution_flow(self, temp_db_path):
         """
         Test complete flow: create nodes -> consolidate -> promote -> decay.
@@ -118,7 +113,7 @@ class TestMemorySystemIntegration:
         assert node1.tier == "longterm"
         assert node2.tier == "longterm"
 
-    @requires_python_backend
+
     def test_memory_with_reasoning_traces(self, temp_db_path):
         """
         Test memory system integration with reasoning traces.
@@ -168,7 +163,7 @@ class TestMemorySystemIntegration:
         assert len(rejected) == 1
         assert rejected[0].reason == "JWT is more scalable for API"
 
-    @requires_python_backend
+
     def test_budget_tracking_with_memory(self, temp_db_path):
         """
         Test budget tracking during memory operations.
@@ -221,7 +216,7 @@ class TestMemorySystemIntegration:
 
         tracker.end_task()
 
-    @requires_python_backend
+
     def test_repl_with_memory_functions(self, temp_db_path):
         """
         Test REPL environment with memory functions enabled.
@@ -267,7 +262,7 @@ class TestMemorySystemIntegration:
 class TestFullSystemIntegration:
     """Full system integration tests."""
 
-    @requires_python_backend
+
     def test_complete_workflow(self, temp_db_path):
         """
         Test a complete workflow using all components.

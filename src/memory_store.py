@@ -293,21 +293,20 @@ class MemoryStore:
 
         self.db_path = db_path
 
-        # Initialize rlm_core backend if available
+        # rlm_core backend uses a separate database to avoid schema conflicts
         self._core_store: Any = None
         if _rlm_core is not None:
             try:
-                self._core_store = _rlm_core.MemoryStore.open(db_path)
+                core_db = db_path.replace(".db", "-core.db") if db_path != ":memory:" else ":memory:"
+                self._core_store = _rlm_core.MemoryStore.open(core_db)
             except Exception as e:
                 import warnings
-                warnings.warn(f"Failed to initialize rlm_core.MemoryStore: {e}. Falling back to Python.")
+                warnings.warn(f"Failed to initialize rlm_core.MemoryStore: {e}")
                 self._core_store = None
 
-        # Initialize Python backend only if rlm_core is not handling the database
-        # This avoids schema conflicts between the two implementations
+        # Python SQLite is always the primary store for full API compatibility
         self._ensure_directory()
-        if self._core_store is None:
-            self._init_database()
+        self._init_database()
 
     @property
     def uses_rlm_core(self) -> bool:
@@ -341,6 +340,58 @@ class MemoryStore:
             conn.execute("PRAGMA foreign_keys=ON")
             # Create schema
             conn.executescript(SCHEMA_SQL)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _init_auxiliary_tables(self) -> None:
+        """Initialize Python-specific tables when rlm_core manages core node/edge schema."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.executescript("""
+                -- Evolution log
+                CREATE TABLE IF NOT EXISTS evolution_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    operation TEXT NOT NULL,
+                    node_ids JSON NOT NULL,
+                    from_tier TEXT,
+                    to_tier TEXT,
+                    reasoning TEXT
+                );
+
+                -- Confidence updates audit
+                CREATE TABLE IF NOT EXISTS confidence_updates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    node_id TEXT NOT NULL,
+                    old_confidence REAL NOT NULL,
+                    new_confidence REAL NOT NULL,
+                    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('outcome', 'decay', 'consolidation', 'manual')),
+                    trigger_id TEXT,
+                    timestamp INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+                );
+                CREATE INDEX IF NOT EXISTS idx_confidence_updates_node ON confidence_updates(node_id);
+                CREATE INDEX IF NOT EXISTS idx_confidence_updates_trigger ON confidence_updates(trigger_type);
+
+                -- Hyperedges (rlm_core uses different edge types, keep Python edges separate)
+                CREATE TABLE IF NOT EXISTS hyperedges (
+                    id TEXT PRIMARY KEY,
+                    edge_type TEXT NOT NULL CHECK(edge_type IN ('relation', 'composition', 'causation', 'context')),
+                    label TEXT,
+                    weight REAL DEFAULT 1.0 CHECK(weight >= 0.0)
+                );
+                CREATE TABLE IF NOT EXISTS membership (
+                    hyperedge_id TEXT NOT NULL REFERENCES hyperedges(id) ON DELETE CASCADE,
+                    node_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    position INTEGER DEFAULT 0,
+                    PRIMARY KEY (hyperedge_id, node_id, role)
+                );
+                CREATE INDEX IF NOT EXISTS idx_membership_node ON membership(node_id);
+                CREATE INDEX IF NOT EXISTS idx_membership_edge ON membership(hyperedge_id);
+            """)
             conn.commit()
         finally:
             conn.close()
@@ -381,22 +432,120 @@ class MemoryStore:
         }
         return mapping.get(tier, _rlm_core.Tier.Task)
 
+    def _map_core_node_type_to_str(self, node_type: Any) -> str:
+        """Map rlm_core.NodeType enum to Python string."""
+        name = str(node_type).split(".")[-1].lower()
+        return name if name in self.VALID_NODE_TYPES else "fact"
+
+    def _map_core_tier_to_str(self, tier: Any) -> str:
+        """Map rlm_core.Tier enum to Python string."""
+        name = str(tier).split(".")[-1].lower()
+        return name if name in self.VALID_TIERS else "task"
+
+    def _core_node_to_python(self, node: Any) -> "Node":
+        """Convert rlm_core.Node to Python Node dataclass."""
+        return Node(
+            id=node.id,
+            type=self._map_core_node_type_to_str(node.node_type),
+            content=node.content,
+            tier=self._map_core_tier_to_str(node.tier),
+            confidence=node.confidence if node.confidence is not None else 0.5,
+            subtype=node.subtype,
+            embedding=None,  # Rust stores Vec<f32>, Python expects bytes
+            provenance=node.provenance_source,
+            metadata=node.metadata or {},
+            created_at=0,
+            updated_at=0,
+            last_accessed=0,
+            access_count=0,
+        )
+
     def _create_node_core(
         self,
         node_type: str,
         content: str,
         tier: str,
+        confidence: float = 0.5,
+        subtype: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        provenance: str | None = None,
+        embedding: list[float] | None = None,
     ) -> str:
         """Create a node using rlm_core backend."""
         if _rlm_core is None or self._core_store is None:
             raise RuntimeError("rlm_core not available")
 
+        kwargs: dict[str, Any] = {}
+        if subtype is not None:
+            kwargs["subtype"] = subtype
+        if confidence != 0.5:
+            kwargs["confidence"] = confidence
+        if metadata:
+            kwargs["metadata"] = metadata
+        if provenance:
+            # Map provenance string to valid source type if possible
+            kwargs["provenance_source"] = "inference"
+            kwargs["provenance_ref"] = provenance
+        if embedding:
+            kwargs["embedding"] = embedding
+
         node = _rlm_core.Node(
-            content=content,
             node_type=self._map_node_type_to_core(node_type),
+            content=content,
             tier=self._map_tier_to_core(tier),
+            **kwargs,
         )
         return self._core_store.add_node(node)
+
+    def _get_node_core(self, node_id: str) -> "Node | None":
+        """Get a node using rlm_core backend."""
+        if self._core_store is None:
+            raise RuntimeError("rlm_core not available")
+        result = self._core_store.get_node(node_id)
+        if result is None:
+            return None
+        return self._core_node_to_python(result)
+
+    def _delete_node_core(self, node_id: str) -> bool:
+        """Delete a node using rlm_core backend."""
+        if self._core_store is None:
+            raise RuntimeError("rlm_core not available")
+        try:
+            self._core_store.delete_node(node_id)
+            return True
+        except Exception:
+            return False
+
+    def _query_nodes_core(
+        self,
+        node_type: str | None = None,
+        tier: str | None = None,
+        limit: int = 100,
+    ) -> list["Node"]:
+        """Query nodes using rlm_core backend."""
+        if _rlm_core is None or self._core_store is None:
+            raise RuntimeError("rlm_core not available")
+
+        if node_type is not None:
+            results = self._core_store.query_by_type(
+                self._map_node_type_to_core(node_type), limit
+            )
+        elif tier is not None:
+            results = self._core_store.query_by_tier(
+                self._map_tier_to_core(tier), limit
+            )
+        else:
+            # No specific filter — query all by type "fact" as fallback
+            # rlm_core doesn't have a "list all" method
+            results = []
+            for nt in self.VALID_NODE_TYPES:
+                results.extend(
+                    self._core_store.query_by_type(
+                        self._map_node_type_to_core(nt), limit
+                    )
+                )
+
+        return [self._core_node_to_python(n) for n in results]
 
     def _search_core(self, query: str, limit: int) -> list["SearchResult"]:
         """Search using rlm_core backend."""
@@ -406,10 +555,10 @@ class MemoryStore:
         results = self._core_store.search_content(query, limit)
         return [
             SearchResult(
-                node_id=str(node.id)[:8] + "...",  # Truncate for display
+                node_id=node.id,
                 content=node.content,
-                node_type=str(node.node_type).lower(),
-                bm25_score=0.0,  # rlm_core uses different scoring
+                node_type=self._map_core_node_type_to_str(node.node_type),
+                bm25_score=node.confidence if node.confidence is not None else 0.5,
                 snippet=node.content[:100] if len(node.content) > 100 else node.content,
             )
             for node in results
@@ -487,16 +636,7 @@ class MemoryStore:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got: {confidence}")
 
-        # Delegate to rlm_core if available
-        # Note: rlm_core doesn't support metadata, subtype, confidence, provenance, embedding yet
-        if self._core_store is not None:
-            return self._create_node_core(
-                node_type=node_type,
-                content=content,
-                tier=tier,
-            )
-
-        # Python implementation fallback
+        # Python implementation
         # Generate UUID (SPEC-02.09)
         node_id = str(uuid.uuid4())
 
@@ -845,7 +985,7 @@ class MemoryStore:
 
             return Hyperedge(
                 id=row["id"],
-                type=row["type"],
+                type=row["edge_type"],
                 label=row["label"],
                 weight=row["weight"],
             )
@@ -1287,7 +1427,7 @@ class MemoryStore:
         values: list[Any] = []
 
         if edge_type is not None:
-            conditions.append("type = ?")
+            conditions.append("edge_type = ?")
             values.append(edge_type)
 
         if label is not None:
@@ -1304,7 +1444,7 @@ class MemoryStore:
             return [
                 Hyperedge(
                     id=row["id"],
-                    type=row["type"],
+                    type=row["edge_type"],
                     label=row["label"],
                     weight=row["weight"],
                 )
@@ -1328,7 +1468,7 @@ class MemoryStore:
             return [
                 Hyperedge(
                     id=row["id"],
-                    type=row["type"],
+                    type=row["edge_type"],
                     label=row["label"],
                     weight=row["weight"],
                 )
@@ -1892,13 +2032,6 @@ class MemoryStore:
             node_type = type
         if not query or not query.strip():
             return []
-
-        # Delegate to rlm_core if available (for basic search without filters)
-        if self._core_store is not None and node_type is None and min_confidence is None:
-            try:
-                return self._search_core(query, limit)
-            except Exception:
-                pass  # Fall back to Python implementation
 
         conn = self._get_connection()
         try:

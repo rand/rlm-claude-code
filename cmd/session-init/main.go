@@ -83,6 +83,15 @@ func main() {
 		}
 	}
 
+	// Verify rlm_core is importable (Rust backend)
+	checkCmd := exec.Command(filepath.Join(venvPath, "bin", "python"), "-c", "import rlm_core")
+	checkCmd.Dir = pluginRoot
+	if output, err := checkCmd.CombinedOutput(); err != nil {
+		hookio.Debug("rlm_core not available: %v\n%s (Python fallback will be used)", err, output)
+	} else {
+		hookio.Debug("rlm_core Rust backend verified")
+	}
+
 	// Create marker file
 	os.MkdirAll(filepath.Dir(markerFile), 0755)
 	os.WriteFile(markerFile, []byte(time.Now().Format(time.RFC3339)), 0644)

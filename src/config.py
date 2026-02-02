@@ -18,7 +18,7 @@ def _get_use_rlm_core() -> bool:
     Priority order:
     1. RLM_USE_CORE environment variable (if set)
     2. use_rlm_core setting in ~/.claude/rlm-config.json
-    3. Default: False
+    3. Default: True
 
     Returns:
         True if rlm-core should be used, False otherwise.
@@ -34,15 +34,15 @@ def _get_use_rlm_core() -> bool:
         try:
             with open(config_path) as f:
                 data = json.load(f)
-            return data.get("use_rlm_core", False)
+            return data.get("use_rlm_core", True)
         except (json.JSONDecodeError, OSError):
             pass
 
-    return False
+    return True
 
 
-# Feature flag for rlm-core migration
-# Set RLM_USE_CORE=true env var or use_rlm_core=true in config to enable
+# Feature flag for rlm-core Rust backend (enabled by default)
+# Set RLM_USE_CORE=false env var or use_rlm_core=false in config to disable
 USE_RLM_CORE = _get_use_rlm_core()
 
 if TYPE_CHECKING:
