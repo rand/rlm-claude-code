@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
@@ -36,15 +37,10 @@ func main() {
 	shouldActivate := false
 	reason := ""
 
-	switch dpPhase {
-	case "spec":
+	suggestedMode := events.SuggestedRLMMode()
+	if suggestedMode != "" {
 		shouldActivate = true
-		reason = "DP spec phase: RLM thorough mode recommended"
-	case "review":
-		shouldActivate = true
-		reason = "DP review phase: RLM thorough mode recommended"
-	default:
-		shouldActivate = false
+		reason = fmt.Sprintf("DP phase %s: RLM %s mode recommended", dpPhase, suggestedMode)
 	}
 
 	if shouldActivate {

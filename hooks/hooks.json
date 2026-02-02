@@ -44,8 +44,8 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "If the tool output reveals unexpected complexity (large error traces, many files affected, cross-module dependencies), consider suggesting RLM escalation to the user.",
-            "description": "Post-tool RLM escalation check"
+            "prompt": "If the tool output reveals unexpected complexity (large error traces, many files affected, cross-module dependencies), consider suggesting RLM escalation to the user. RLM mode should align with the current DP phase: spec/review phases warrant thorough mode, orient/decide/test/implement phases warrant balanced mode.",
+            "description": "Post-tool RLM escalation check with DP phase awareness"
           }
         ]
       }
