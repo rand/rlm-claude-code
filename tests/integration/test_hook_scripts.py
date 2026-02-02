@@ -35,7 +35,7 @@ class TestInitRLMScript:
         monkeypatch.setenv("HOME", str(tmp_path))
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "init_rlm.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "init_rlm.py")],
             capture_output=True,
             text=True,
             env=get_env_with_pythonpath(tmp_path),
@@ -59,7 +59,7 @@ class TestInitRLMScript:
         monkeypatch.setenv("HOME", str(tmp_path))
 
         subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "init_rlm.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "init_rlm.py")],
             capture_output=True,
             text=True,
             env=get_env_with_pythonpath(tmp_path),
@@ -86,7 +86,7 @@ class TestCheckComplexityScript:
         result = subprocess.run(
             [
                 sys.executable,
-                str(PROJECT_ROOT / "scripts" / "check_complexity.py"),
+                str(PROJECT_ROOT / "scripts" / "legacy" / "check_complexity.py"),
                 "git status",
             ],
             capture_output=True,
@@ -112,7 +112,7 @@ class TestCheckComplexityScript:
         result = subprocess.run(
             [
                 sys.executable,
-                str(PROJECT_ROOT / "scripts" / "check_complexity.py"),
+                str(PROJECT_ROOT / "scripts" / "legacy" / "check_complexity.py"),
                 "Find the bug in auth.py and fix it, then update the tests in test_auth.py",
             ],
             capture_output=True,
@@ -148,7 +148,7 @@ class TestSyncContextScript:
         env["CLAUDE_SESSION_ID"] = "test-session"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "sync_context.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "sync_context.py")],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
@@ -174,7 +174,7 @@ class TestCaptureOutputScript:
         env["CLAUDE_TOOL_EXIT_CODE"] = "0"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "capture_output.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "capture_output.py")],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
@@ -197,7 +197,7 @@ class TestExternalizeContextScript:
         env["CLAUDE_SESSION_ID"] = "extern-test"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "externalize_context.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "externalize_context.py")],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
@@ -225,7 +225,7 @@ class TestSaveTrajectoryScript:
 
         # Initialize session first
         subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "init_rlm.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "init_rlm.py")],
             capture_output=True,
             text=True,
             env=env,
@@ -234,7 +234,7 @@ class TestSaveTrajectoryScript:
         # Sync context to create session
         env["CLAUDE_SESSION_ID"] = "save-test"
         subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "sync_context.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "sync_context.py")],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
@@ -243,7 +243,7 @@ class TestSaveTrajectoryScript:
 
         # Save trajectory
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "save_trajectory.py")],
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "legacy" / "save_trajectory.py")],
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
