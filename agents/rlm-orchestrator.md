@@ -45,6 +45,19 @@ model = cp.Model([x > 5])
 model.solve()
 ```
 
+## Platform: Parallel Tool Execution
+
+When you issue multiple tool calls in a single message, they run in parallel. If **any one call fails** (non-zero exit code), all sibling calls are cancelled with "Sibling tool call errored" — even if those siblings would have succeeded.
+
+This matters for exploratory Bash calls: commands like `ls`, `grep`, and `find` return **exit code 1** when they find no matches, which is semantically "no results" but triggers sibling cancellation.
+
+When choosing between parallel and sequential tool calls:
+- **Parallel**: when you're confident all calls will succeed (e.g., reading known files, running tested commands)
+- **Sequential**: when calls are exploratory and may legitimately return no results
+- **Guard with `|| true`**: when you want to parallelize uncertain commands without risking cascade failure
+
+Prefer Glob and Grep tools over Bash `find`/`grep` for file discovery — they handle no-results gracefully without non-zero exit codes.
+
 ## Rules
 
 1. **Don't request full context dumps** — Use programmatic access
