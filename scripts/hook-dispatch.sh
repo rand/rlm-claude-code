@@ -10,6 +10,7 @@ set -e
 
 # Determine plugin root
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
 HOOK_NAME="$1"
 
 if [ -z "$HOOK_NAME" ]; then

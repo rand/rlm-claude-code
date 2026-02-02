@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.1] - 2026-02-02
+
+### Fixed
+- **hook-dispatch.sh**: Export `CLAUDE_PLUGIN_ROOT` env var so Go binaries can find plugin root (fixes "plugin root not found" error)
+
+### Removed
+- `UserPromptSubmit` prompt hook — caused Claude to block normal messages; RLM guidance now lives in CLAUDE.md
+- `PostToolUse` catch-all prompt hook — fired on every tool use adding cost/latency; redundant with PreToolUse complexity-check
+- `PreCompact` prompt hook — low value; trajectory-save on Stop handles persistence
+
+### Changed
+- All hooks are now command-type only (no prompt hooks remain) — eliminates invisible gating behavior
+- Hook architecture: command hooks provide dynamic state data, CLAUDE.md provides static workflow instructions
+
 ## [0.6.0] - 2026-02-02
 
 ### Added

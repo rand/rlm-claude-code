@@ -13,18 +13,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "You have access to RLM (Recursive Language Model) for complex tasks. If the user's request involves multi-file analysis, debugging complex issues, architectural decisions, or exhaustive searches, consider activating RLM with `/rlm mode balanced` or `/rlm mode thorough`. For simple tasks, RLM micro mode runs automatically. Do not mention RLM unless the task complexity warrants it.",
-            "description": "RLM activation guidance based on task complexity"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": ".*",
@@ -34,30 +22,6 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" complexity-check",
             "timeout": 2000,
             "description": "Check context complexity for RLM activation via Go binary"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "If the tool output reveals unexpected complexity (large error traces, many files affected, cross-module dependencies), consider suggesting RLM escalation to the user. RLM mode should align with the current DP phase: spec/review phases warrant thorough mode, orient/decide/test/implement phases warrant balanced mode.",
-            "description": "Post-tool RLM escalation check with DP phase awareness"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before compaction, ensure any active RLM context (trajectory, memory state, orchestration state) has been externalized. If RLM is active, save trajectory with `/rlm save`.",
-            "description": "Externalize RLM context before compaction"
           }
         ]
       }
