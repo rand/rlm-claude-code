@@ -2,7 +2,6 @@
 package main
 
 import (
-	"os"
 	"time"
 
 	"github.com/rand/rlm-claude-code/internal/events"
@@ -10,10 +9,12 @@ import (
 )
 
 func main() {
+	// Try to read input but don't fail if it's missing/invalid
+	// Stop hooks may not always provide JSON input
 	_, err := hookio.ReadInput()
 	if err != nil {
-		hookio.Debug("Failed to read input: %v", err)
-		os.Exit(1)
+		hookio.Debug("No valid input (expected for Stop hooks): %v", err)
+		// Continue anyway - fail forward
 	}
 
 	hookio.Debug("Saving trajectory...")
@@ -24,4 +25,7 @@ func main() {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"source":    "rlm-claude-code",
 	}, "rlm-claude-code")
+
+	// Output success for Claude Code
+	hookio.Approve("")
 }
