@@ -15,12 +15,15 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
+            args: --release --out dist -i python3.12
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: auto
+            args: --release --out dist --find-interpreter
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             manylinux: 2_28
+            args: --release --out dist --find-interpreter
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +43,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: ${{ matrix.args }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
 
       - name: Upload wheel artifact
