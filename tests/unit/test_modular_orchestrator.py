@@ -6,13 +6,10 @@ Tests for modular orchestrator architecture.
 
 from __future__ import annotations
 
-import importlib
 import sys
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 
 # --- SPEC-12.01: Module structure ---
 
@@ -341,11 +338,8 @@ class TestModularOrchestratorIntegration:
         """All orchestrator modules should work together."""
         from src.orchestrator import (
             AsyncExecutor,
-            AsyncRLMOrchestrator,
-            IntelligentOrchestrator,
             OrchestrationState,
             OrchestratorConfig,
-            RLMOrchestrator,
         )
 
         # Create instances without errors
@@ -359,7 +353,7 @@ class TestModularOrchestratorIntegration:
 
     def test_checkpointing_with_orchestrator(self) -> None:
         """Checkpointing should integrate with orchestrator state."""
-        from src.orchestrator.checkpointing import CheckpointingOrchestrator, RLMCheckpoint
+        from src.orchestrator.checkpointing import RLMCheckpoint
         from src.orchestrator.core import OrchestrationState
 
         # Create state
@@ -797,10 +791,10 @@ class TestParallelVerification:
         @trace SPEC-16.26
         audit_claims should accept parallel parameter.
         """
-        from src.epistemic.evidence_auditor import EvidenceAuditor
-
         # Check signature
         import inspect
+
+        from src.epistemic.evidence_auditor import EvidenceAuditor
 
         sig = inspect.signature(EvidenceAuditor.audit_claims)
         params = list(sig.parameters.keys())
@@ -845,15 +839,11 @@ class TestSampleMode:
         config = VerificationConfig(mode="sample", sample_rate=0.1)
 
         # Claim with uncertainty marker should be verified
-        uncertain = config.should_verify_claim(
-            99, False, claim_text="This might be the case"
-        )
+        uncertain = config.should_verify_claim(99, False, claim_text="This might be the case")
         assert uncertain is True
 
         # Claim without uncertainty marker at non-sampled index
-        certain = config.should_verify_claim(
-            99, False, claim_text="This is definitely true"
-        )
+        certain = config.should_verify_claim(99, False, claim_text="This is definitely true")
         # Index 99 with rate 0.1 -> 99 % 10 != 0, so not sampled
         assert certain is False
 

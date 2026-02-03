@@ -14,16 +14,6 @@ All public classes are re-exported here for backward compatibility.
 """
 
 # Core orchestration (SPEC-12.02)
-from .core import OrchestrationState, RLMOrchestrator
-
-# Intelligent orchestration (SPEC-12.03)
-from .intelligent import (
-    IntelligentOrchestrator,
-    ORCHESTRATOR_SYSTEM_PROMPT,
-    OrchestratorConfig,
-    create_orchestration_plan,
-)
-
 # Async execution (SPEC-12.04)
 from .async_executor import (
     AsyncExecutor,
@@ -39,6 +29,15 @@ from .async_executor import (
 from .checkpointing import (
     CheckpointingOrchestrator,
     RLMCheckpoint,
+)
+from .core import OrchestrationState, RLMOrchestrator
+
+# Intelligent orchestration (SPEC-12.03)
+from .intelligent import (
+    ORCHESTRATOR_SYSTEM_PROMPT,
+    IntelligentOrchestrator,
+    OrchestratorConfig,
+    create_orchestration_plan,
 )
 
 # Steering (SPEC-12.06, SPEC-11.10-11.16)

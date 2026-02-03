@@ -6,21 +6,15 @@ Tests for embedding-based memory retrieval.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
 from src.embedding_retrieval import (
     EmbeddingConfig,
-    EmbeddingProvider,
     EmbeddingStore,
     HybridRetriever,
     HybridSearchResult,
     MockEmbeddingProvider,
 )
-
 
 # --- Test fixtures ---
 

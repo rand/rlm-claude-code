@@ -150,9 +150,7 @@ class RelevanceScorer:
 
     def __init__(self) -> None:
         """Initialize relevance scorer."""
-        self._patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.HIGH_RELEVANCE_PATTERNS
-        ]
+        self._patterns = [re.compile(p, re.IGNORECASE) for p in self.HIGH_RELEVANCE_PATTERNS]
 
     def score_sentences(
         self,
@@ -463,9 +461,7 @@ class TwoStageCompressor:
         stages_applied: list[CompressionStage] = []
 
         # Stage 1: Extractive compression
-        extractive_result = self.extractive.compress(
-            content, target_tokens, context
-        )
+        extractive_result = self.extractive.compress(content, target_tokens, context)
         stages_applied.append(CompressionStage.EXTRACTIVE)
 
         current_content = extractive_result.content
@@ -473,9 +469,7 @@ class TwoStageCompressor:
 
         # Stage 2: Abstractive if still over target
         if current_tokens > target_tokens:
-            abstractive_result = self.abstractive.compress(
-                current_content, target_tokens
-            )
+            abstractive_result = self.abstractive.compress(current_content, target_tokens)
             stages_applied.append(CompressionStage.ABSTRACTIVE)
             current_content = abstractive_result.content
             current_tokens = self._estimate_tokens(current_content)
@@ -541,9 +535,7 @@ class ContextCompressor:
             )
 
         # Apply two-stage compression
-        result = self.two_stage.compress(
-            content, self.config.target_tokens, context
-        )
+        result = self.two_stage.compress(content, self.config.target_tokens, context)
 
         # Record metrics
         self.metrics.record_compression(result.input_tokens, result.output_tokens)

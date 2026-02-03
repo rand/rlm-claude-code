@@ -6,7 +6,6 @@ Tests for progressive trajectory disclosure.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 import pytest
@@ -21,7 +20,6 @@ from src.progressive_trajectory import (
     render_summary,
 )
 from src.trajectory import TrajectoryEvent, TrajectoryEventType
-
 
 # --- Test fixtures ---
 
@@ -258,7 +256,11 @@ class TestSummaryFormat:
 
         # Should include some info from final event
         # "Analysis complete: found 3 potential issues"
-        assert "complete" in summary.lower() or "issues" in summary.lower() or "found" in summary.lower()
+        assert (
+            "complete" in summary.lower()
+            or "issues" in summary.lower()
+            or "found" in summary.lower()
+        )
 
 
 # --- SPEC-11.04: Overview filtering ---

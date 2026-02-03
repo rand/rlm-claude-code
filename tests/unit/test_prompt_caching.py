@@ -12,14 +12,11 @@ from typing import Any
 import pytest
 
 from src.prompt_caching import (
-    CacheablePrompt,
     CacheMetrics,
     CachePrefixRegistry,
     PromptCacheManager,
-    StructuredPrompt,
     build_cacheable_prompt,
 )
-
 
 # --- Test fixtures ---
 
@@ -432,9 +429,7 @@ class TestAcceptanceCriteria:
         assert isinstance(user_content, list)
 
         # Verify ordering: cacheable content before query
-        content_texts = [
-            block.get("text", "") for block in user_content if isinstance(block, dict)
-        ]
+        content_texts = [block.get("text", "") for block in user_content if isinstance(block, dict)]
         full_text = " ".join(content_texts)
 
         # Shared context should appear before query

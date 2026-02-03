@@ -1,6 +1,6 @@
 [project]
 name = "rlm-claude-code"
-version = "0.6.1"
+version = "0.7.0"
 description = "Recursive Language Model integration for Claude Code"
 readme = "README.md"
 requires-python = ">=3.12"

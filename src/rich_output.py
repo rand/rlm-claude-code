@@ -462,9 +462,7 @@ class RLMConsole:
                 )
                 self.console.print(Panel(syntax, border_style=Color.ERROR.value, padding=(0, 1)))
             else:
-                self.console.print(
-                    Panel(context, border_style=Color.ERROR.value, padding=(0, 1))
-                )
+                self.console.print(Panel(context, border_style=Color.ERROR.value, padding=(0, 1)))
 
     def emit_warning(self, message: str, depth: int = 0) -> None:
         """

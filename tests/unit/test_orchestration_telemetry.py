@@ -290,9 +290,7 @@ class TestTelemetryLogging:
         assert len(telemetry._heuristic_outcomes) == 2
 
         # Check that triggered status is correct
-        outcomes_by_name = {
-            o.heuristic_name: o for o in telemetry._heuristic_outcomes
-        }
+        outcomes_by_name = {o.heuristic_name: o for o in telemetry._heuristic_outcomes}
         assert outcomes_by_name["discovery_required"].triggered is True
         assert outcomes_by_name["synthesis_required"].triggered is False
 

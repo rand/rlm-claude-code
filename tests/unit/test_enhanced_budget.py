@@ -517,9 +517,7 @@ class TestConfiguration:
         assert limits_fast.max_recursive_calls == 3
 
         # Test thorough mode
-        tracker_thorough = EnhancedBudgetTracker(
-            config_path=temp_config_path, mode="thorough"
-        )
+        tracker_thorough = EnhancedBudgetTracker(config_path=temp_config_path, mode="thorough")
         limits_thorough = tracker_thorough.get_limits()
         assert limits_thorough.max_cost_per_task == 20.0
         assert limits_thorough.max_recursive_calls == 25
@@ -624,7 +622,6 @@ class TestMetricsTracking:
 
         @trace SPEC-05.24
         """
-        from src.cost_tracker import CostComponent
         from src.enhanced_budget import BudgetLimits
 
         limits = BudgetLimits(max_repl_executions=2)

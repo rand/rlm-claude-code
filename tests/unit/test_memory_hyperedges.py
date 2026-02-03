@@ -389,9 +389,7 @@ class TestCreateEdge:
         # Create many nodes
         nodes = []
         for i in range(10):
-            node_id = memory_store.create_node(
-                node_type="entity", content=f"Node {i}"
-            )
+            node_id = memory_store.create_node(node_type="entity", content=f"Node {i}")
             nodes.append(node_id)
 
         # Create edge with all nodes
@@ -474,9 +472,7 @@ class TestGetRelatedNodes:
         )
 
         # Filter by relation type
-        related = memory_store.get_related_nodes(
-            sample_nodes["node1"], edge_type="relation"
-        )
+        related = memory_store.get_related_nodes(sample_nodes["node1"], edge_type="relation")
         node_ids = [n.id for n in related]
 
         assert sample_nodes["node2"] in node_ids

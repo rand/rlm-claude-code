@@ -7,20 +7,13 @@ Tests for execution guarantees implementation.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import Any
-from unittest.mock import MagicMock
-
-import pytest
 
 from src.execution_guarantees import (
     ExecutionGuarantees,
     GracefulDegradationPlan,
     GuaranteeChecker,
-    GuaranteeViolation,
     ViolationType,
 )
-
 
 # --- Test fixtures ---
 

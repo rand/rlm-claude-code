@@ -151,7 +151,7 @@ class IntentClassifier:
             Detected QueryIntent
         """
         query_lower = query.lower()
-        scores: dict[QueryIntent, int] = {intent: 0 for intent in QueryIntent}
+        scores: dict[QueryIntent, int] = dict.fromkeys(QueryIntent, 0)
 
         for intent, patterns in self.patterns.items():
             for pattern in patterns:
@@ -268,12 +268,14 @@ class CodeTaskEnricher:
             base = filename[:-3]
 
             # Common test file patterns
-            tests.extend([
-                f"tests/test_{base}.py",
-                f"tests/unit/test_{base}.py",
-                f"test_{base}.py",
-                f"tests/{base}_test.py",
-            ])
+            tests.extend(
+                [
+                    f"tests/test_{base}.py",
+                    f"tests/unit/test_{base}.py",
+                    f"test_{base}.py",
+                    f"tests/{base}_test.py",
+                ]
+            )
 
             # If in src/, check parallel tests/
             if "src/" in file_path:
@@ -326,11 +328,13 @@ class DebugTaskEnricher:
 
         for match in re.finditer(pattern, stack_trace):
             file_path, line_num, func_name = match.groups()
-            locations.append({
-                "file": file_path,
-                "line": int(line_num),
-                "function": func_name,
-            })
+            locations.append(
+                {
+                    "file": file_path,
+                    "line": int(line_num),
+                    "function": func_name,
+                }
+            )
 
         return locations
 
@@ -452,9 +456,7 @@ class ContextEnricher:
 
         # Truncate if needed
         if token_count > self.config.max_tokens:
-            enriched, token_count = self._truncate_to_budget(
-                enriched, self.config.max_tokens
-            )
+            enriched, token_count = self._truncate_to_budget(enriched, self.config.max_tokens)
             reasoning_parts.append(f"Truncated to {self.config.max_tokens} tokens")
 
         return EnrichmentResult(

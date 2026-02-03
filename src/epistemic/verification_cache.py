@@ -370,9 +370,7 @@ class VerificationCache:
             total_hits = cursor.fetchone()["hits"]
 
             # Average support score
-            cursor = conn.execute(
-                "SELECT AVG(support_score) as avg FROM verification_cache"
-            )
+            cursor = conn.execute("SELECT AVG(support_score) as avg FROM verification_cache")
             row = cursor.fetchone()
             avg_score = row["avg"] if row["avg"] is not None else 0.0
 
@@ -434,9 +432,7 @@ def create_cached_auditor(
             return cached.support_score, cached.issues, cached.reasoning
 
         # Call original
-        support_score, issues, reasoning = await original_verify(
-            claim_text, evidence, model
-        )
+        support_score, issues, reasoning = await original_verify(claim_text, evidence, model)
 
         # Cache result
         cache.put(claim_text, evidence, support_score, issues, reasoning)

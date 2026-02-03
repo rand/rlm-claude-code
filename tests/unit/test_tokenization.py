@@ -6,18 +6,16 @@ Tests: SPEC-01.01 (Phase 4 - Massive Context)
 
 from __future__ import annotations
 
-import pytest
-
 from src.tokenization import (
     Chunk,
     ChunkingConfig,
+    chunk_by_tokens,
     count_tokens,
     detect_language,
     find_semantic_boundaries,
     iter_chunks,
     partition_content_by_tokens,
     token_aware_chunk,
-    chunk_by_tokens,
 )
 
 
@@ -225,7 +223,8 @@ class TestTokenAwareChunk:
                 assert token_count > 0
 
     def test_handles_code_with_semantic_boundaries(self):
-        code = """
+        code = (
+            """
 def function_one():
     # Lots of code here
     pass
@@ -237,7 +236,9 @@ def function_two():
 def function_three():
     # Even more code
     pass
-""" * 10  # Make it large enough to require chunking
+"""
+            * 10
+        )  # Make it large enough to require chunking
 
         chunks = token_aware_chunk(code, max_tokens=100, overlap_tokens=0)
 
@@ -275,9 +276,12 @@ class TestChunkByTokens:
             assert chunk.end_offset <= len(content) + 1000  # Allow for overlap
 
     def test_chunk_has_boundary_type(self):
-        code = """def hello():
+        code = (
+            """def hello():
     pass
-""" * 20
+"""
+            * 20
+        )
 
         chunks = chunk_by_tokens(code, max_tokens=100)
 
@@ -441,5 +445,5 @@ class TestPropertyInvariants:
         chunks = chunk_by_tokens(content, max_tokens=100)
 
         for chunk in chunks:
-            assert 0 <= chunk.start_offset
+            assert chunk.start_offset >= 0
             assert chunk.start_offset < chunk.end_offset

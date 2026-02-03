@@ -9,8 +9,6 @@ Tests cover:
 - Enrichment logging
 """
 
-import pytest
-
 from src.context_enrichment import (
     CodeTaskEnricher,
     ContextEnricher,
@@ -47,7 +45,9 @@ class TestProactiveEnrichment:
         result = enricher.enrich("Explain this code", context=original)
 
         # Should have additions
-        assert "additions" in result.enriched_context or len(result.enriched_context) > len(original)
+        assert "additions" in result.enriched_context or len(result.enriched_context) > len(
+            original
+        )
 
 
 class TestIntentClassification:
@@ -260,7 +260,9 @@ class TestTokenBudget:
         )
 
         # Main content should be preserved (content is essential for code tasks)
-        assert "content" in result.enriched_context or "main" in str(result.enriched_context).lower()
+        assert (
+            "content" in result.enriched_context or "main" in str(result.enriched_context).lower()
+        )
 
     def test_default_token_budget(self):
         """Default token budget should be reasonable."""

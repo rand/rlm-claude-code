@@ -15,12 +15,11 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from src.context_index import ContextIndex, FileIndex
 from src.tokenization import count_tokens
-
 
 # Strategies
 valid_filename = st.text(
@@ -30,7 +29,9 @@ valid_filename = st.text(
 ).map(lambda s: s + ".py")
 
 python_content = st.text(
-    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd", "Zs"), whitelist_characters="\n_():'\""),
+    alphabet=st.characters(
+        whitelist_categories=("Ll", "Lu", "Nd", "Zs"), whitelist_characters="\n_():'\""
+    ),
     min_size=10,
     max_size=500,
 )

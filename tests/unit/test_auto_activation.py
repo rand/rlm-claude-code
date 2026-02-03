@@ -316,6 +316,7 @@ class TestAutoActivator:
 
     def test_callback_error_ignored(self, activator, empty_context):
         """Callback errors don't affect activation."""
+
         def bad_callback(d):
             raise ValueError("callback error")
 

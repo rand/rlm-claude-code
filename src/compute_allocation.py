@@ -245,7 +245,7 @@ class ComputeAllocator:
 
     def _detect_task_type(self, query_lower: str) -> TaskType:
         """Detect task type from query."""
-        scores: dict[TaskType, int] = {t: 0 for t in TaskType}
+        scores: dict[TaskType, int] = dict.fromkeys(TaskType, 0)
 
         for task_type, patterns in self.TASK_PATTERNS.items():
             for pattern in patterns:
@@ -329,7 +329,9 @@ class ComputeAllocator:
         # Base allocation from difficulty
         base_depth = self._calculate_depth(difficulty.score)
         base_model = self._calculate_model_tier(difficulty.score, optimize_for)
-        base_parallel = self._calculate_parallel_calls(difficulty.score, difficulty.context_complexity)
+        base_parallel = self._calculate_parallel_calls(
+            difficulty.score, difficulty.context_complexity
+        )
         base_timeout = self._calculate_timeout(difficulty.score)
 
         # Estimate cost

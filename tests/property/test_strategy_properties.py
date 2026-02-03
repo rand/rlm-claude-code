@@ -10,26 +10,24 @@ Tests invariants and properties of:
 import tempfile
 from pathlib import Path
 
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
+from src.orchestration_schema import ToolAccessLevel
 from src.strategy_cache import (
-    QueryFeatures,
-    CachedStrategy,
     FeatureExtractor,
+    QueryFeatures,
     StrategyCache,
 )
-from src.trajectory_analysis import (
-    StrategyType,
-    StrategySignal,
-    TrajectoryMetrics,
-    StrategyAnalysis,
-    TrajectoryAnalyzer,
-)
+from src.tool_bridge import ToolBridge, ToolPermissions
 from src.trajectory import TrajectoryEvent, TrajectoryEventType
-from src.tool_bridge import ToolBridge, ToolPermissions, ToolResult
-from src.orchestration_schema import ToolAccessLevel
-
+from src.trajectory_analysis import (
+    StrategyAnalysis,
+    StrategySignal,
+    StrategyType,
+    TrajectoryAnalyzer,
+    TrajectoryMetrics,
+)
 
 # Strategies for generating test data
 strategy_types = st.sampled_from(list(StrategyType))
@@ -39,7 +37,7 @@ word_counts = st.integers(min_value=0, max_value=1000)
 
 # Generate valid query text
 query_text = st.text(
-    alphabet=st.characters(whitelist_categories=('L', 'N', 'P', 'Z')),
+    alphabet=st.characters(whitelist_categories=("L", "N", "P", "Z")),
     min_size=1,
     max_size=200,
 )
@@ -129,7 +127,9 @@ class TestStrategyCacheProperties:
     """Property tests for StrategyCache."""
 
     @given(
-        effectiveness=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+        effectiveness=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
         strategy=strategy_types,
     )
     def test_add_respects_min_effectiveness(self, effectiveness: float, strategy: StrategyType):
@@ -167,8 +167,16 @@ class TestStrategyCacheProperties:
         assert len(cache._entries) <= max_entries
 
     @given(
-        v1=st.lists(st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False), min_size=3, max_size=3),
-        v2=st.lists(st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False), min_size=3, max_size=3),
+        v1=st.lists(
+            st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False),
+            min_size=3,
+            max_size=3,
+        ),
+        v2=st.lists(
+            st.floats(min_value=-1, max_value=1, allow_nan=False, allow_infinity=False),
+            min_size=3,
+            max_size=3,
+        ),
     )
     def test_cosine_similarity_bounds(self, v1: list[float], v2: list[float]):
         """Cosine similarity is always approximately in [-1, 1]."""
@@ -308,7 +316,11 @@ class TestToolBridgeProperties:
             assert result.success is False
             assert "not permitted" in result.error.lower()
 
-    @given(level=st.sampled_from([ToolAccessLevel.NONE, ToolAccessLevel.REPL_ONLY, ToolAccessLevel.READ_ONLY]))
+    @given(
+        level=st.sampled_from(
+            [ToolAccessLevel.NONE, ToolAccessLevel.REPL_ONLY, ToolAccessLevel.READ_ONLY]
+        )
+    )
     def test_non_full_levels_deny_bash(self, level: ToolAccessLevel):
         """Non-full levels deny bash execution."""
         with tempfile.TemporaryDirectory() as tmpdir:

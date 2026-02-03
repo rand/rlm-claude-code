@@ -5,7 +5,6 @@ Implements: Spec §8.1 Phase 3 - Async Sub-calls tests
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

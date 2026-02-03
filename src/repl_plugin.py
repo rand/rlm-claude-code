@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class PluginConflictError(Exception):
@@ -199,6 +200,7 @@ class REPLPluginManager:
         Returns:
             Sandboxed function
         """
+
         def sandboxed(*args: Any, **kwargs: Any) -> Any:
             # In production, would add security checks here
             return func(*args, **kwargs)

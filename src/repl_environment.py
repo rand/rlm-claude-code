@@ -671,7 +671,9 @@ class RLMEnvironment:
         if self.access_level != "micro":
             helpers.extend(["llm", "summarize", "map_reduce", "llm_batch"])
             # Epistemic verification helpers (SPEC-16)
-            helpers.extend(["verify_claim", "evidence_dependence", "audit_reasoning", "detect_hallucinations"])
+            helpers.extend(
+                ["verify_claim", "evidence_dependence", "audit_reasoning", "detect_hallucinations"]
+            )
 
         return helpers
 
@@ -1464,9 +1466,13 @@ class RLMEnvironment:
 
         # Validate thresholds
         if not 0.0 <= support_threshold <= 1.0:
-            raise ValueError(f"support_threshold must be between 0.0 and 1.0, got {support_threshold}")
+            raise ValueError(
+                f"support_threshold must be between 0.0 and 1.0, got {support_threshold}"
+            )
         if not 0.0 <= dependence_threshold <= 1.0:
-            raise ValueError(f"dependence_threshold must be between 0.0 and 1.0, got {dependence_threshold}")
+            raise ValueError(
+                f"dependence_threshold must be between 0.0 and 1.0, got {dependence_threshold}"
+            )
 
         # Normalize context to string
         if isinstance(context, dict):
@@ -1636,9 +1642,7 @@ class RLMEnvironment:
         self.globals["memory_get_context"] = self._memory_get_context
         self.globals["memory_relate"] = self._memory_relate
 
-    def _memory_query(
-        self, query: str, limit: int = 10, tier: str | None = None
-    ) -> list[Any]:
+    def _memory_query(self, query: str, limit: int = 10, tier: str | None = None) -> list[Any]:
         """
         Search for nodes matching a query.
 
@@ -1676,9 +1680,7 @@ class RLMEnvironment:
         matching.sort(key=lambda n: n.confidence, reverse=True)
         return matching[:limit]
 
-    def _memory_add_fact(
-        self, content: str, confidence: float = 0.5, tier: str = "task"
-    ) -> str:
+    def _memory_add_fact(self, content: str, confidence: float = 0.5, tier: str = "task") -> str:
         """
         Add a fact to memory.
 

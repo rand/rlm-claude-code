@@ -353,14 +353,16 @@ class MetaLearner:
         correct_model = prediction.predicted_model == actual_model
         correct_success = prediction.predicted_success == actual_success
 
-        self.predictions.append({
-            "prediction": prediction.to_dict(),
-            "actual_model": actual_model,
-            "actual_success": actual_success,
-            "correct_model": correct_model,
-            "correct_success": correct_success,
-            "timestamp": time.time(),
-        })
+        self.predictions.append(
+            {
+                "prediction": prediction.to_dict(),
+                "actual_model": actual_model,
+                "actual_success": actual_success,
+                "correct_model": correct_model,
+                "correct_success": correct_success,
+                "timestamp": time.time(),
+            }
+        )
 
     def get_prediction_accuracy(self) -> float:
         """
@@ -374,10 +376,7 @@ class MetaLearner:
         if not self.predictions:
             return 0.5  # Default when no predictions
 
-        correct = sum(
-            1 for p in self.predictions
-            if p["correct_model"] and p["correct_success"]
-        )
+        correct = sum(1 for p in self.predictions if p["correct_model"] and p["correct_success"])
         return correct / len(self.predictions)
 
     def get_adjusted_learning_rate(self) -> float:
@@ -521,8 +520,8 @@ class ContinuousLearner:
             key = f"{signal.query_type}:{signal.model}"
             current = self.state.routing_adjustments.get(key, 0.0)
             # Incremental update with learning rate (SPEC-06.43)
-            self.state.routing_adjustments[key] = (
-                current + learning_rate * (signal.reward - current)
+            self.state.routing_adjustments[key] = current + learning_rate * (
+                signal.reward - current
             )
 
     def _update_strategy(self, signal: LearningSignal, learning_rate: float) -> None:

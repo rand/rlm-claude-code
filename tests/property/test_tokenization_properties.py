@@ -8,17 +8,15 @@ Uses Hypothesis for property-based testing of chunking invariants.
 
 from __future__ import annotations
 
-import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from src.tokenization import (
-    count_tokens,
-    token_aware_chunk,
     chunk_by_tokens,
+    count_tokens,
     partition_content_by_tokens,
+    token_aware_chunk,
 )
-
 
 # Custom strategies
 reasonable_text = st.text(
@@ -202,7 +200,7 @@ class TestOverlapProperties:
 
     @given(
         max_tokens=st.integers(min_value=100, max_value=300),
-        overlap=st.integers(min_value=10, max_value=50)
+        overlap=st.integers(min_value=10, max_value=50),
     )
     @settings(max_examples=20, deadline=15000)
     def test_overlap_increases_chunk_count(self, max_tokens: int, overlap: int):
@@ -211,7 +209,9 @@ class TestOverlapProperties:
         content = "def function():\n    pass\n\n" * 50
 
         chunks_no_overlap = token_aware_chunk(content, max_tokens=max_tokens, overlap_tokens=0)
-        chunks_with_overlap = token_aware_chunk(content, max_tokens=max_tokens, overlap_tokens=overlap)
+        chunks_with_overlap = token_aware_chunk(
+            content, max_tokens=max_tokens, overlap_tokens=overlap
+        )
 
         # With overlap, we should have same or more chunks
         assert len(chunks_with_overlap) >= len(chunks_no_overlap)

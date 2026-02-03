@@ -305,9 +305,7 @@ class EvidenceAuditor:
 
         # Aggregate results
         flagged_count = sum(1 for r in results if r.verification.is_flagged)
-        phantom_count = sum(
-            1 for r in results for g in r.gaps if g.gap_type == "phantom_citation"
-        )
+        phantom_count = sum(1 for r in results for g in r.gaps if g.gap_type == "phantom_citation")
 
         return BatchAuditResult(
             results=list(results),

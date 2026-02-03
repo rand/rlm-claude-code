@@ -341,7 +341,7 @@ class EnhancedBudgetTracker:
             ...     input_tokens=1000,
             ...     output_tokens=500,
             ...     model="claude-sonnet-4-20250514",
-            ...     component=CostComponent.ROOT_PROMPT
+            ...     component=CostComponent.ROOT_PROMPT,
             ... )
         """
         # Update token metrics

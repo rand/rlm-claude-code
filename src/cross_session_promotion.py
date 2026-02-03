@@ -500,15 +500,11 @@ class CrossSessionPromoter:
         # Build rejection reason
         reasons = []
         if not self.criteria.meets_session_threshold(candidate.session_count):
-            reasons.append(
-                f"session_count {candidate.session_count} < {self.config.min_sessions}"
-            )
+            reasons.append(f"session_count {candidate.session_count} < {self.config.min_sessions}")
         if not self.criteria.has_successful_outcomes(candidate.success_count):
             reasons.append("no successful outcomes")
         if not self.criteria.has_high_confidence(candidate.confidence):
-            reasons.append(
-                f"confidence {candidate.confidence} < {self.config.min_confidence}"
-            )
+            reasons.append(f"confidence {candidate.confidence} < {self.config.min_confidence}")
 
         return PromotionDecision(
             node_id=candidate.node_id,

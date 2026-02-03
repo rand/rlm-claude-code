@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any
 from ..api_client import ClaudeClient, Provider, init_client
 from ..memory_store import MemoryStore
 
-
 # ============================================================================
 # Error Recovery (SPEC-12.10)
 # ============================================================================
@@ -541,7 +540,10 @@ class RLMOrchestrator:
                     type=TrajectoryEventType.VERIFICATION,
                     depth=0,
                     content=f"Response annotated with {verification_report.flagged_claims} uncertainty markers",
-                    metadata={"mode": "flag", "annotations_added": verification_report.flagged_claims},
+                    metadata={
+                        "mode": "flag",
+                        "annotations_added": verification_report.flagged_claims,
+                    },
                 )
 
             # SPEC-16.24: Direct ask mode (no retry)
@@ -1178,7 +1180,8 @@ Respond with just the simplified code in a ```python block."""
         # Apply sampling if in sample mode (SPEC-16.28)
         if self.verification_config.mode == "sample":
             sampled_claims = [
-                c for i, c in enumerate(claims)
+                c
+                for i, c in enumerate(claims)
                 if self.verification_config.should_verify_claim(
                     i, c.is_critical, claim_text=c.claim_text
                 )
@@ -1295,14 +1298,16 @@ Respond with just the simplified code in a ```python block."""
             prompt_parts.append("\n")
 
         # Instructions for grounded response
-        prompt_parts.extend([
-            "### Requirements for Revised Response\n",
-            "1. **Only make claims you can support** with the available evidence\n",
-            "2. **Cite specific sources** when making factual claims (e.g., 'According to src/file.py...')\n",
-            "3. **Acknowledge uncertainty** if evidence is incomplete or ambiguous\n",
-            "4. **Remove or qualify** any claims that cannot be verified\n\n",
-            "Provide a revised FINAL: <answer> that addresses these issues.",
-        ])
+        prompt_parts.extend(
+            [
+                "### Requirements for Revised Response\n",
+                "1. **Only make claims you can support** with the available evidence\n",
+                "2. **Cite specific sources** when making factual claims (e.g., 'According to src/file.py...')\n",
+                "3. **Acknowledge uncertainty** if evidence is incomplete or ambiguous\n",
+                "4. **Remove or qualify** any claims that cannot be verified\n\n",
+                "Provide a revised FINAL: <answer> that addresses these issues.",
+            ]
+        )
 
         return "".join(prompt_parts)
 
@@ -1347,9 +1352,7 @@ Respond with just the simplified code in a ```python block."""
                     "low_dependence": "LOW CONFIDENCE: Weakly supported",
                     "confidence_mismatch": "UNCERTAIN: Confidence not justified",
                 }
-                label = reason_labels.get(
-                    verification.flag_reason, "UNVERIFIED: Could not verify"
-                )
+                label = reason_labels.get(verification.flag_reason, "UNVERIFIED: Could not verify")
 
                 # Try to find and annotate the claim in the response
                 # Use simple substring matching (claims are extracted verbatim)

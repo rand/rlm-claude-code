@@ -10,8 +10,6 @@ Tests cover:
 - Confirmation requirements
 """
 
-import pytest
-
 from src.user_corrections import (
     ClassifierAdjustment,
     Correction,
@@ -310,7 +308,10 @@ class TestConfirmationRequirement:
         adjustment = learner.get_pending_adjustment()
         learner.confirm_adjustment()
 
-        assert learner.get_pending_adjustment() is None or learner.get_pending_adjustment().is_confirmed
+        assert (
+            learner.get_pending_adjustment() is None
+            or learner.get_pending_adjustment().is_confirmed
+        )
 
     def test_adjustments_logged(self):
         """SPEC-11.25: Adjustments are logged."""

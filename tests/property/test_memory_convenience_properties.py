@@ -14,14 +14,11 @@ from __future__ import annotations
 
 import os
 import tempfile
-from pathlib import Path
 
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-import pytest
 
 from src.memory_store import MemoryStore
-
 
 # Strategies
 content_text = st.text(

@@ -5,19 +5,20 @@ Implements: Spec §6.6 tests
 """
 
 import json
-import pytest
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.trajectory import (
-    TrajectoryEventType,
-    TrajectoryEvent,
-    TrajectoryRenderer,
     StreamingTrajectory,
+    TrajectoryEvent,
+    TrajectoryEventType,
+    TrajectoryRenderer,
     TrajectoryStream,
 )
 
@@ -188,9 +189,7 @@ class TestTrajectoryRenderer:
         renderer = TrajectoryRenderer(verbosity="minimal", colors=False)
         long_content = "x" * 100
 
-        truncated = renderer._truncate_content(
-            long_content, TrajectoryEventType.ANALYZE
-        )
+        truncated = renderer._truncate_content(long_content, TrajectoryEventType.ANALYZE)
 
         assert len(truncated) <= 60
         assert truncated.endswith("...")
@@ -200,9 +199,7 @@ class TestTrajectoryRenderer:
         renderer = TrajectoryRenderer(verbosity="verbose", colors=False)
         medium_content = "x" * 200
 
-        truncated = renderer._truncate_content(
-            medium_content, TrajectoryEventType.ANALYZE
-        )
+        truncated = renderer._truncate_content(medium_content, TrajectoryEventType.ANALYZE)
 
         # Should not be truncated at 200 chars in verbose mode
         assert len(truncated) == 200
@@ -212,9 +209,7 @@ class TestTrajectoryRenderer:
         renderer = TrajectoryRenderer(verbosity="debug", colors=False)
         long_content = "x" * 500
 
-        truncated = renderer._truncate_content(
-            long_content, TrajectoryEventType.ANALYZE
-        )
+        truncated = renderer._truncate_content(long_content, TrajectoryEventType.ANALYZE)
 
         assert len(truncated) == 500
 

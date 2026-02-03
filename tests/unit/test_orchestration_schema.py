@@ -7,15 +7,15 @@ Implements: Spec §8.1 Phase 2 - Orchestration Layer tests
 import pytest
 
 from src.orchestration_schema import (
+    MODE_DEFAULTS,
+    STRATEGY_DEFAULTS,
+    TIER_MODELS,
     DecisionConfidence,
     ExecutionMode,
     ExecutionStrategy,
-    MODE_DEFAULTS,
     OrchestrationContext,
     OrchestrationPlan,
     PlanAdjustment,
-    STRATEGY_DEFAULTS,
-    TIER_MODELS,
     ToolAccessLevel,
 )
 from src.smart_router import ModelTier, QueryType

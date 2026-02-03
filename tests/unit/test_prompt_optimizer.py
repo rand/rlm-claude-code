@@ -127,12 +127,14 @@ class TestPromptLibrary:
     def test_select_variant_epsilon_greedy(self, library):
         """Can select using epsilon-greedy strategy."""
         # Record some results to create preference
-        library.record_result(PromptResult(
-            variant_id="root_v1",
-            success=True,
-            tokens_used=1000,
-            execution_time_ms=500,
-        ))
+        library.record_result(
+            PromptResult(
+                variant_id="root_v1",
+                success=True,
+                tokens_used=1000,
+                execution_time_ms=500,
+            )
+        )
 
         variant = library.select_variant(
             PromptType.ROOT,
@@ -175,12 +177,14 @@ class TestPromptLibrary:
 
     def test_record_result(self, library):
         """Can record prompt results."""
-        library.record_result(PromptResult(
-            variant_id="root_v1",
-            success=True,
-            tokens_used=1500,
-            execution_time_ms=800,
-        ))
+        library.record_result(
+            PromptResult(
+                variant_id="root_v1",
+                success=True,
+                tokens_used=1500,
+                execution_time_ms=800,
+            )
+        )
 
         stats = library.get_stats("root_v1")
         assert stats.uses == 1
@@ -190,12 +194,14 @@ class TestPromptLibrary:
     def test_record_multiple_results(self, library):
         """Aggregates multiple results correctly."""
         for i in range(5):
-            library.record_result(PromptResult(
-                variant_id="root_v1",
-                success=i < 3,  # 3 successes, 2 failures
-                tokens_used=1000,
-                execution_time_ms=500,
-            ))
+            library.record_result(
+                PromptResult(
+                    variant_id="root_v1",
+                    success=i < 3,  # 3 successes, 2 failures
+                    tokens_used=1000,
+                    execution_time_ms=500,
+                )
+            )
 
         stats = library.get_stats("root_v1")
         assert stats.uses == 5
@@ -204,20 +210,24 @@ class TestPromptLibrary:
 
     def test_record_feedback(self, library):
         """Records user feedback."""
-        library.record_result(PromptResult(
-            variant_id="root_v1",
-            success=True,
-            tokens_used=1000,
-            execution_time_ms=500,
-            user_feedback=1,  # Positive
-        ))
-        library.record_result(PromptResult(
-            variant_id="root_v1",
-            success=True,
-            tokens_used=1000,
-            execution_time_ms=500,
-            user_feedback=-1,  # Negative
-        ))
+        library.record_result(
+            PromptResult(
+                variant_id="root_v1",
+                success=True,
+                tokens_used=1000,
+                execution_time_ms=500,
+                user_feedback=1,  # Positive
+            )
+        )
+        library.record_result(
+            PromptResult(
+                variant_id="root_v1",
+                success=True,
+                tokens_used=1000,
+                execution_time_ms=500,
+                user_feedback=-1,  # Negative
+            )
+        )
 
         stats = library.get_stats("root_v1")
         assert stats.positive_feedback == 1
@@ -232,13 +242,15 @@ class TestPromptLibrary:
         """Gets recommendations for improvement."""
         # Record enough data for recommendations
         for i in range(15):
-            library.record_result(PromptResult(
-                variant_id="root_v1",
-                success=i < 5,  # Low success rate
-                tokens_used=6000,  # High token usage
-                execution_time_ms=1000,
-                user_feedback=-1 if i < 8 else 1,  # Negative feedback
-            ))
+            library.record_result(
+                PromptResult(
+                    variant_id="root_v1",
+                    success=i < 5,  # Low success rate
+                    tokens_used=6000,  # High token usage
+                    execution_time_ms=1000,
+                    user_feedback=-1 if i < 8 else 1,  # Negative feedback
+                )
+            )
 
         recommendations = library.get_recommendations(PromptType.ROOT)
 

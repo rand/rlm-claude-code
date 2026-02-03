@@ -14,8 +14,6 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from src.continuous_learning import (
     ContinuousLearner,
     ExecutionOutcome,
@@ -112,12 +110,26 @@ class TestOutcomeRecording:
         recorder = OutcomeRecorder()
 
         success = recorder.record(
-            query="Q1", features={}, strategy="s", model="m",
-            depth=1, tools=[], success=True, cost=0.01, latency_ms=100,
+            query="Q1",
+            features={},
+            strategy="s",
+            model="m",
+            depth=1,
+            tools=[],
+            success=True,
+            cost=0.01,
+            latency_ms=100,
         )
         failure = recorder.record(
-            query="Q2", features={}, strategy="s", model="m",
-            depth=1, tools=[], success=False, cost=0.01, latency_ms=100,
+            query="Q2",
+            features={},
+            strategy="s",
+            model="m",
+            depth=1,
+            tools=[],
+            success=False,
+            cost=0.01,
+            latency_ms=100,
         )
 
         assert success.success is True
@@ -166,8 +178,15 @@ class TestOutcomeRecording:
         recorder = OutcomeRecorder()
 
         outcome = recorder.record(
-            query="Test", features={}, strategy="s", model="m",
-            depth=1, tools=[], success=True, cost=0.01, latency_ms=100,
+            query="Test",
+            features={},
+            strategy="s",
+            model="m",
+            depth=1,
+            tools=[],
+            success=True,
+            cost=0.01,
+            latency_ms=100,
         )
 
         assert outcome.timestamp is not None
@@ -246,14 +265,26 @@ class TestLearningSignals:
         extractor = SignalExtractor()
 
         success_outcome = ExecutionOutcome(
-            query="Q", features={"query_type": "general"},
-            strategy="direct", model="haiku", depth=1, tools=[],
-            success=True, cost=0.001, latency_ms=100,
+            query="Q",
+            features={"query_type": "general"},
+            strategy="direct",
+            model="haiku",
+            depth=1,
+            tools=[],
+            success=True,
+            cost=0.001,
+            latency_ms=100,
         )
         failure_outcome = ExecutionOutcome(
-            query="Q", features={"query_type": "general"},
-            strategy="direct", model="haiku", depth=1, tools=[],
-            success=False, cost=0.001, latency_ms=100,
+            query="Q",
+            features={"query_type": "general"},
+            strategy="direct",
+            model="haiku",
+            depth=1,
+            tools=[],
+            success=False,
+            cost=0.001,
+            latency_ms=100,
         )
 
         success_signals = extractor.extract(success_outcome)

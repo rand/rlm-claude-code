@@ -254,9 +254,7 @@ class UserCorrectionLearner:
         )
 
         # Re-analyze corrections
-        self._pending_adjustment = self._analyzer.analyze(
-            self._recorder.get_corrections()
-        )
+        self._pending_adjustment = self._analyzer.analyze(self._recorder.get_corrections())
 
         return correction
 
@@ -291,11 +289,13 @@ class UserCorrectionLearner:
         self._applied_adjustments.append(self._pending_adjustment)
 
         # Log the adjustment
-        self._adjustment_log.append({
-            "adjustment": self._pending_adjustment.to_dict(),
-            "applied_at": datetime.now().isoformat(),
-            "action": "confirmed",
-        })
+        self._adjustment_log.append(
+            {
+                "adjustment": self._pending_adjustment.to_dict(),
+                "applied_at": datetime.now().isoformat(),
+                "action": "confirmed",
+            }
+        )
 
         self._pending_adjustment = None
         self._recorder.clear()
@@ -313,11 +313,13 @@ class UserCorrectionLearner:
             return False
 
         # Log the rejection
-        self._adjustment_log.append({
-            "adjustment": self._pending_adjustment.to_dict(),
-            "rejected_at": datetime.now().isoformat(),
-            "action": "rejected",
-        })
+        self._adjustment_log.append(
+            {
+                "adjustment": self._pending_adjustment.to_dict(),
+                "rejected_at": datetime.now().isoformat(),
+                "action": "rejected",
+            }
+        )
 
         self._pending_adjustment = None
         return True

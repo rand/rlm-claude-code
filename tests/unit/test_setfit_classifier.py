@@ -4,16 +4,14 @@ Unit tests for SetFit classifier module.
 Tests cover both SetFit-enabled and fallback modes.
 """
 
-import pytest
-
 from src.setfit_classifier import (
+    LEVEL_ACTIVATION_MAP,
+    SIGNAL_COMPLEXITY_HINTS,
     ComplexityClassification,
     ComplexityLevel,
     SetFitClassifier,
     SetFitConfig,
     is_setfit_available,
-    LEVEL_ACTIVATION_MAP,
-    SIGNAL_COMPLEXITY_HINTS,
 )
 
 
@@ -226,9 +224,7 @@ class TestSignalInference:
     def test_infer_debugging_signal(self):
         """Debugging signals are inferred from keywords."""
         classifier = SetFitClassifier()
-        signals = classifier._infer_signals(
-            ComplexityLevel.COMPLEX, "Debug this error message"
-        )
+        signals = classifier._infer_signals(ComplexityLevel.COMPLEX, "Debug this error message")
         assert "debugging_deep" in signals
 
     def test_infer_conversational_signal(self):

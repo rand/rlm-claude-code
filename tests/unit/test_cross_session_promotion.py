@@ -10,8 +10,6 @@ Tests cover:
 - Manual promotion override
 """
 
-import pytest
-
 from src.cross_session_promotion import (
     AccessRecord,
     CrossSessionPromoter,

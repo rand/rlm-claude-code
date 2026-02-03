@@ -14,11 +14,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .context_enrichment import ContextEnricher, QueryIntent
+from .context_enrichment import ContextEnricher
 from .continuous_learning import ContinuousLearner, LearnerConfig
-from .learned_routing import DifficultyEstimator, LearnedRouter, RoutingDecision
 from .lats_orchestration import LATSOrchestrator, ToolPlan
-from .proactive_computation import ComputationAdvisor, DetectionResult
+from .learned_routing import DifficultyEstimator, LearnedRouter, RoutingDecision
+from .proactive_computation import ComputationAdvisor
 
 
 class PipelineStage(Enum):
@@ -47,8 +47,17 @@ class PipelineConfig:
     simple_query_max_words: int = 3
     simple_query_patterns: list[str] = field(
         default_factory=lambda: [
-            "hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
-            "yes", "no", "bye", "goodbye",
+            "hi",
+            "hello",
+            "hey",
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "yes",
+            "no",
+            "bye",
+            "goodbye",
         ]
     )
 
@@ -196,9 +205,7 @@ class SmartPipeline:
         self.context_enricher = ContextEnricher()
         self.router = LearnedRouter()
         self.orchestrator = LATSOrchestrator()
-        self.learner = ContinuousLearner(
-            config=LearnerConfig(enable_meta_learning=True)
-        )
+        self.learner = ContinuousLearner(config=LearnerConfig(enable_meta_learning=True))
 
     def is_definitely_simple(self, query: str) -> bool:
         """
@@ -223,8 +230,15 @@ class SmartPipeline:
         if len(words) <= self.config.simple_query_max_words:
             # Short queries without complex indicators
             complex_indicators = [
-                "analyze", "implement", "debug", "explain", "compare",
-                "optimize", "refactor", "design", "architect",
+                "analyze",
+                "implement",
+                "debug",
+                "explain",
+                "compare",
+                "optimize",
+                "refactor",
+                "design",
+                "architect",
             ]
             if not any(ind in query_lower for ind in complex_indicators):
                 return True
@@ -271,18 +285,16 @@ class SmartPipeline:
 
         # Stage 1: Analyze (SPEC-06.50 Step 1)
         analyze_result = self._run_analyze(query)
-        stage_telemetry.append(self._create_telemetry(
-            PipelineStage.ANALYZE, analyze_result
-        ))
+        stage_telemetry.append(self._create_telemetry(PipelineStage.ANALYZE, analyze_result))
         stages_run += 1
         result.analysis = analyze_result.output
 
         # Stage 2: Compute Check (SPEC-06.50 Step 2)
         if self.config.enable_proactive_compute:
             compute_result = self._run_compute_check(query)
-            stage_telemetry.append(self._create_telemetry(
-                PipelineStage.COMPUTE_CHECK, compute_result
-            ))
+            stage_telemetry.append(
+                self._create_telemetry(PipelineStage.COMPUTE_CHECK, compute_result)
+            )
             stages_run += 1
             result.proactive_check_performed = True
             result.computation_detected = compute_result.output.get("detected", False)
@@ -290,35 +302,27 @@ class SmartPipeline:
         # Stage 3: Enrich (SPEC-06.50 Step 3)
         if self.config.enable_context_enrichment:
             enrich_result = self._run_enrich(query, context)
-            stage_telemetry.append(self._create_telemetry(
-                PipelineStage.ENRICH, enrich_result
-            ))
+            stage_telemetry.append(self._create_telemetry(PipelineStage.ENRICH, enrich_result))
             stages_run += 1
             result.context_enriched = True
             context = enrich_result.output.get("enriched_context", context)
 
         # Stage 4: Route (SPEC-06.50 Step 4)
         route_result = self._run_route(query)
-        stage_telemetry.append(self._create_telemetry(
-            PipelineStage.ROUTE, route_result
-        ))
+        stage_telemetry.append(self._create_telemetry(PipelineStage.ROUTE, route_result))
         stages_run += 1
         result.routing_decision = route_result.output.get("decision")
 
         # Stage 5: Plan (SPEC-06.50 Step 5)
         plan_result = self._run_plan(query)
-        stage_telemetry.append(self._create_telemetry(
-            PipelineStage.PLAN, plan_result
-        ))
+        stage_telemetry.append(self._create_telemetry(PipelineStage.PLAN, plan_result))
         stages_run += 1
         result.plan = plan_result.output.get("plan")
         result.plan_skipped = plan_result.output.get("skipped", False)
 
         # Stage 6: Execute (SPEC-06.50 Step 6)
         execute_result = self._run_execute(query)
-        stage_telemetry.append(self._create_telemetry(
-            PipelineStage.EXECUTE, execute_result
-        ))
+        stage_telemetry.append(self._create_telemetry(PipelineStage.EXECUTE, execute_result))
         stages_run += 1
         result.execution_completed = execute_result.success
 
@@ -329,9 +333,7 @@ class SmartPipeline:
                 outcome={"success": result.execution_completed},
                 routing_decision=result.routing_decision,
             )
-            stage_telemetry.append(self._create_telemetry(
-                PipelineStage.LEARN, learn_result
-            ))
+            stage_telemetry.append(self._create_telemetry(PipelineStage.LEARN, learn_result))
             stages_run += 1
             result.learning_recorded = learn_result.success
 

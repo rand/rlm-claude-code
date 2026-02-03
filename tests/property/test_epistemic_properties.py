@@ -8,29 +8,26 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings, assume, strategies as st
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.epistemic.similarity import (
+    SimilarityMethod,
+    SimilarityResult,
+    cosine_similarity,
+    text_overlap_similarity,
+)
 from src.epistemic.types import (
     ClaimVerification,
     EpistemicGap,
     HallucinationReport,
     VerificationConfig,
 )
-from src.epistemic.similarity import (
-    SimilarityResult,
-    SimilarityConfig,
-    SimilarityMethod,
-    cosine_similarity,
-    text_overlap_similarity,
-)
 from src.epistemic.verification_feedback import (
     FeedbackStatistics,
-    FeedbackType,
-    VerificationFeedback,
 )
-
 
 # ============================================================================
 # Strategies for generating test data
@@ -43,7 +40,9 @@ score_strategy = st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_
 positive_float = st.floats(min_value=0.0, max_value=100.0, allow_nan=False, allow_infinity=False)
 
 # Strategy for claim IDs
-claim_id_strategy = st.text(min_size=1, max_size=20, alphabet="abcdefghijklmnopqrstuvwxyz0123456789-")
+claim_id_strategy = st.text(
+    min_size=1, max_size=20, alphabet="abcdefghijklmnopqrstuvwxyz0123456789-"
+)
 
 # Strategy for claim text
 claim_text_strategy = st.text(min_size=1, max_size=200)
@@ -161,7 +160,9 @@ class TestClaimVerificationProperties:
             evidence_dependence=evidence_dependence,
             consistency_score=consistency_score,
         )
-        assert 0.0 <= claim.combined_score <= 1.0, f"Combined score out of bounds: {claim.combined_score}"
+        assert 0.0 <= claim.combined_score <= 1.0, (
+            f"Combined score out of bounds: {claim.combined_score}"
+        )
 
     @given(claim_id_strategy, claim_text_strategy, score_strategy, score_strategy)
     @settings(max_examples=100)
@@ -496,9 +497,7 @@ class TestSimilarityResultProperties:
         result = SimilarityResult(score=score, method=SimilarityMethod.EMBEDDING)
         assert result.score == score
 
-    @given(
-        st.floats(min_value=-100, max_value=-0.001) | st.floats(min_value=1.001, max_value=100)
-    )
+    @given(st.floats(min_value=-100, max_value=-0.001) | st.floats(min_value=1.001, max_value=100))
     @settings(max_examples=50)
     def test_invalid_score_rejected(self, score: float) -> None:
         """Invalid scores (outside 0-1) are rejected."""

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from src.progress import (
@@ -154,9 +154,7 @@ class TestProgressContextProperties:
 
     @given(
         total=st.integers(min_value=10, max_value=1000),
-        progress_values=st.lists(
-            st.integers(min_value=0, max_value=100), min_size=1, max_size=10
-        ),
+        progress_values=st.lists(st.integers(min_value=0, max_value=100), min_size=1, max_size=10),
     )
     @settings(max_examples=20, deadline=5000)
     def test_set_progress_sets_absolute(self, total: int, progress_values: list[int]):

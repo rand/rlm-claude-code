@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -19,7 +19,6 @@ from src.trajectory import (
     TrajectoryEventType,
     TrajectoryRenderer,
 )
-
 
 # Strategies for generating test data
 event_type_strategy = st.sampled_from(list(TrajectoryEventType))

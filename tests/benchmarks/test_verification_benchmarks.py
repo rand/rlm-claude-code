@@ -11,7 +11,6 @@ Run with:
 import os
 import tempfile
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -50,7 +49,7 @@ class TestClaimVerificationBenchmarks:
                     ClaimVerification(
                         claim_id=f"c{i}",
                         claim_text=f"The function returns {i}",
-                        evidence_ids=[f"e{i}", f"e{i+1}"],
+                        evidence_ids=[f"e{i}", f"e{i + 1}"],
                         evidence_support=0.8 + (i % 20) / 100,
                         evidence_dependence=0.7 + (i % 30) / 100,
                         consistency_score=0.9,

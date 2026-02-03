@@ -19,10 +19,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.repl_environment import (
+    ALLOWED_SUBPROCESSES,
     RLMEnvironment,
     RLMSecurityError,
-    ALLOWED_SUBPROCESSES,
-    BLOCKED_BUILTINS,
 )
 from src.types import SessionContext
 
@@ -172,7 +171,7 @@ class TestSubprocessRestrictions:
     def test_allowed_tools_are_minimal(self):
         """Only minimal set of tools are allowed."""
         # Should only allow type checking, linting, and package management tools
-        assert ALLOWED_SUBPROCESSES == frozenset({"ty", "ruff", "uv"})
+        assert frozenset({"ty", "ruff", "uv"}) == ALLOWED_SUBPROCESSES
 
     def test_run_tool_allows_ty(self, sandbox):
         """run_tool allows ty type checker."""

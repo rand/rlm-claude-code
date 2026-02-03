@@ -20,12 +20,12 @@ from .complexity_classifier import should_activate_rlm
 from .cost_tracker import CostComponent
 from .memory_store import MemoryStore
 from .orchestration_schema import (
+    STRATEGY_DEFAULTS,
     DecisionConfidence,
     ExecutionMode,
     ExecutionStrategy,
     OrchestrationContext,
     OrchestrationPlan,
-    STRATEGY_DEFAULTS,
     ToolAccessLevel,
 )
 from .smart_router import ModelTier, QueryClassifier, QueryType
@@ -1006,7 +1006,9 @@ Output your decision as a JSON object."""
             # Deep debugging benefits from balanced + deeper search
             model_tier = ModelTier.BALANCED
             heuristics_triggered.append("model_tier_override:balanced")
-        elif "pattern_exhaustion" in high_value_signals or "synthesis_required" in high_value_signals:
+        elif (
+            "pattern_exhaustion" in high_value_signals or "synthesis_required" in high_value_signals
+        ):
             # Enumeration tasks can use faster models
             model_tier = ModelTier.FAST
             heuristics_triggered.append("model_tier_override:fast")
@@ -1052,7 +1054,9 @@ Output your decision as a JSON object."""
             heuristics_triggered.append("tool_access:full")
 
         # Check for read-only intent (lower priority than write)
-        elif re.search(r"\b(read|view|show|explain|understand|analyze|find|search|look)\b", query_lower):
+        elif re.search(
+            r"\b(read|view|show|explain|understand|analyze|find|search|look)\b", query_lower
+        ):
             tool_access = ToolAccessLevel.READ_ONLY
             heuristics_triggered.append("tool_access:read_only")
 
@@ -1253,9 +1257,7 @@ async def create_orchestration_plan(
         plan = orchestrator._heuristic_orchestrate(query, orch_context)
         return orchestrator._adjust_plan_from_memory(plan, memory_facts, prior_strategy)
 
-    orchestrator = IntelligentOrchestrator(
-        client=client, config=config, memory_store=memory_store
-    )
+    orchestrator = IntelligentOrchestrator(client=client, config=config, memory_store=memory_store)
     return await orchestrator.create_plan(query, context)
 
 

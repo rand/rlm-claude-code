@@ -10,8 +10,6 @@ Tests cover:
 - Outcome recording
 """
 
-import pytest
-
 from src.learned_routing import (
     CascadingRouter,
     DifficultyEstimator,
@@ -117,9 +115,7 @@ class TestDifficultyEstimation:
         estimator = DifficultyEstimator()
 
         general = estimator.estimate("How do I make coffee?")
-        specific = estimator.estimate(
-            "Explain the Hindley-Milner type inference algorithm."
-        )
+        specific = estimator.estimate("Explain the Hindley-Milner type inference algorithm.")
 
         assert specific.domain_specificity > general.domain_specificity
 
@@ -270,12 +266,20 @@ class TestOutcomeRecording:
     def test_record_includes_success_failure(self):
         """SPEC-06.26: Record includes success/failure."""
         success = OutcomeRecord(
-            query="Test", query_embedding=[], model="sonnet",
-            success=True, quality_score=0.9, cost=0.01,
+            query="Test",
+            query_embedding=[],
+            model="sonnet",
+            success=True,
+            quality_score=0.9,
+            cost=0.01,
         )
         failure = OutcomeRecord(
-            query="Test", query_embedding=[], model="haiku",
-            success=False, quality_score=0.3, cost=0.001,
+            query="Test",
+            query_embedding=[],
+            model="haiku",
+            success=False,
+            quality_score=0.3,
+            cost=0.001,
         )
 
         assert success.success is True
@@ -284,8 +288,12 @@ class TestOutcomeRecording:
     def test_record_includes_quality_score(self):
         """SPEC-06.26: Record includes quality score."""
         record = OutcomeRecord(
-            query="Test", query_embedding=[], model="sonnet",
-            success=True, quality_score=0.85, cost=0.01,
+            query="Test",
+            query_embedding=[],
+            model="sonnet",
+            success=True,
+            quality_score=0.85,
+            cost=0.01,
         )
 
         assert record.quality_score == 0.85
@@ -293,8 +301,12 @@ class TestOutcomeRecording:
     def test_record_includes_cost(self):
         """SPEC-06.26: Record includes cost."""
         record = OutcomeRecord(
-            query="Test", query_embedding=[], model="opus",
-            success=True, quality_score=0.9, cost=0.025,
+            query="Test",
+            query_embedding=[],
+            model="opus",
+            success=True,
+            quality_score=0.9,
+            cost=0.025,
         )
 
         assert record.cost == 0.025

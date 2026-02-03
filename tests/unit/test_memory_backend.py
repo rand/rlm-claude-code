@@ -10,21 +10,18 @@ Tests cover:
 - Migration tooling
 """
 
-import pytest
 from datetime import datetime
-from typing import Any
+
+import pytest
 
 from src.memory_backend import (
-    Edge,
     EdgeType,
     InMemoryBackend,
     MemoryBackend,
     MemoryBackendConfig,
     MemoryBackendType,
     MemoryMigrator,
-    Node,
     NodeType,
-    SearchResult,
     SQLiteBackend,
     create_backend,
 )

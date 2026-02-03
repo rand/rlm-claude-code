@@ -11,9 +11,6 @@ Tests cover:
 """
 
 import math
-from typing import Any
-
-import pytest
 
 from src.lats_orchestration import (
     ActionNode,
@@ -429,7 +426,9 @@ class TestLATSOrchestrator:
         root.visits = 1
 
         # Expand
-        new_node = orchestrator.expand(root, plan.steps[0] if plan.steps else {"tool": "glob", "action": "search"})
+        new_node = orchestrator.expand(
+            root, plan.steps[0] if plan.steps else {"tool": "glob", "action": "search"}
+        )
         assert new_node is not None
         assert new_node.parent is root
 

@@ -4,17 +4,17 @@ Unit tests for intelligent_orchestrator module.
 Implements: Spec §8.1 Phase 2 - Orchestration Layer tests
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.intelligent_orchestrator import (
+    ORCHESTRATOR_SYSTEM_PROMPT,
     IntelligentOrchestrator,
     OrchestratorConfig,
     create_orchestration_plan,
-    ORCHESTRATOR_SYSTEM_PROMPT,
 )
 from src.orchestration_schema import (
-    DecisionConfidence,
     ExecutionMode,
     OrchestrationContext,
     OrchestrationPlan,
@@ -80,8 +80,10 @@ class TestIntelligentOrchestrator:
         # Simple task should not activate RLM
         assert plan.activate_rlm is False
         # Reason should indicate low value (knowledge retrieval, narrow scope, etc.)
-        assert plan.activation_reason in ("simple_task", "conversational") or \
-            plan.activation_reason.startswith("low_value:")
+        assert plan.activation_reason in (
+            "simple_task",
+            "conversational",
+        ) or plan.activation_reason.startswith("low_value:")
 
     def test_heuristic_orchestrate_complex_task(self, orchestrator):
         """Heuristic fallback handles complex tasks."""
@@ -476,7 +478,6 @@ class TestLocalModelIntegration:
         orchestrator = IntelligentOrchestrator(config=config)
 
         # Mock local orchestrator to fail
-        from unittest.mock import AsyncMock, MagicMock
         mock_local = MagicMock()
         mock_local.orchestrate = AsyncMock(side_effect=RuntimeError("No backend"))
         orchestrator._local_orchestrator = mock_local
@@ -786,9 +787,7 @@ class TestImprovedHeuristicMode:
             context_tokens=150_000,  # Large context
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "why is this function failing?", context
-        )
+        plan = orchestrator._heuristic_orchestrate("why is this function failing?", context)
 
         assert plan.depth_budget >= 2  # Should have increased
         assert "depth_adjust:large_context" in plan.metadata["heuristics_triggered"]
@@ -815,9 +814,7 @@ class TestImprovedHeuristicMode:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "migrate this service to microservices", context
-        )
+        plan = orchestrator._heuristic_orchestrate("migrate this service to microservices", context)
 
         assert plan.depth_budget == 3
 
@@ -859,9 +856,7 @@ class TestImprovedHeuristicMode:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "update all instances of the old API", context
-        )
+        plan = orchestrator._heuristic_orchestrate("update all instances of the old API", context)
 
         assert plan.tool_access == ToolAccessLevel.FULL
         assert "tool_access:full" in plan.metadata["heuristics_triggered"]
@@ -874,9 +869,7 @@ class TestImprovedHeuristicMode:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "refactor the entire database layer", context
-        )
+        plan = orchestrator._heuristic_orchestrate("refactor the entire database layer", context)
 
         assert plan.tool_access == ToolAccessLevel.FULL
         assert "tool_access:full" in plan.metadata["heuristics_triggered"]
@@ -889,9 +882,7 @@ class TestImprovedHeuristicMode:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "explain how does the auth module work", context
-        )
+        plan = orchestrator._heuristic_orchestrate("explain how does the auth module work", context)
 
         assert plan.tool_access == ToolAccessLevel.READ_ONLY
         assert "tool_access:read_only" in plan.metadata["heuristics_triggered"]
@@ -934,9 +925,7 @@ class TestImprovedHeuristicMode:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "what is the best way to handle errors", context
-        )
+        plan = orchestrator._heuristic_orchestrate("what is the best way to handle errors", context)
 
         assert plan.tool_access == ToolAccessLevel.REPL_ONLY
         assert "tool_access:repl_only" in plan.metadata["heuristics_triggered"]
@@ -1146,9 +1135,7 @@ class TestHeuristicConfidenceComputation:
             context_tokens=10000,
         )
 
-        plan = orchestrator._heuristic_orchestrate(
-            "design the API for a new microservice", context
-        )
+        plan = orchestrator._heuristic_orchestrate("design the API for a new microservice", context)
 
         data = plan.to_dict()
 

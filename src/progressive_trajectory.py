@@ -119,9 +119,7 @@ class ProgressiveTrajectory:
             One-line summary string
         """
         # Count recursive calls
-        recursive_count = sum(
-            1 for e in self.events if e.type == TrajectoryEventType.RECURSE_START
-        )
+        recursive_count = sum(1 for e in self.events if e.type == TrajectoryEventType.RECURSE_START)
 
         # Find key finding from final event
         key_finding = "completed"

@@ -751,9 +751,7 @@ class MemoryMigrator:
                     )
                     edges_migrated += 1
                 else:
-                    errors.append(
-                        f"Skipped edge {edge.id}: missing node mapping"
-                    )
+                    errors.append(f"Skipped edge {edge.id}: missing node mapping")
             except Exception as e:
                 errors.append(f"Failed to migrate edge {edge.id}: {e}")
 

@@ -139,11 +139,9 @@ class TestDecisionTreeProperties:
             chosen_edges = store.query_edges(label="chooses")
             # Filter to this decision
             decision_chosen = [
-                e for e in chosen_edges
-                if any(
-                    m["node_id"] == decision_id
-                    for m in store.get_edge_members(e.id)
-                )
+                e
+                for e in chosen_edges
+                if any(m["node_id"] == decision_id for m in store.get_edge_members(e.id))
             ]
             assert len(decision_chosen) == 1
 

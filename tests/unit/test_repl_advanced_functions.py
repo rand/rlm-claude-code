@@ -190,7 +190,9 @@ class TestMapReducePartitioning:
         )
 
         # Verify all chunk contexts together cover the original
-        chunk_contexts = [op.context for op in result.operations if "chunk" in op.context.lower() or op.context]
+        chunk_contexts = [
+            op.context for op in result.operations if "chunk" in op.context.lower() or op.context
+        ]
         # Should have chunks that span the content
         assert len(chunk_contexts) >= 4
 
@@ -237,7 +239,11 @@ class TestMapReduceParallelExecution:
         )
 
         # Each chunk operation should contain the map prompt
-        map_operations = [op for op in result.operations if "Extract key points" in op.query or "map" in op.operation_type.lower()]
+        map_operations = [
+            op
+            for op in result.operations
+            if "Extract key points" in op.query or "map" in op.operation_type.lower()
+        ]
         assert len(map_operations) >= 3
 
     def test_batch_operations_are_independent(self, basic_env):
@@ -284,7 +290,8 @@ class TestMapReduceCombination:
 
         # The batch should store the reduce prompt for later use
         assert hasattr(result, "reduce_prompt") or any(
-            "synthesize" in op.query.lower() or "reduce" in getattr(op, "operation_type", "").lower()
+            "synthesize" in op.query.lower()
+            or "reduce" in getattr(op, "operation_type", "").lower()
             for op in result.operations
         )
 
@@ -471,9 +478,7 @@ class TestMapReduceREPLIntegration:
 
         @trace SPEC-01.22
         """
-        basic_env.execute(
-            "batch = map_reduce('Content ' * 100, 'Map it', 'Reduce it', n_chunks=3)"
-        )
+        basic_env.execute("batch = map_reduce('Content ' * 100, 'Map it', 'Reduce it', n_chunks=3)")
 
         ops, batches = basic_env.get_pending_operations()
 
@@ -1554,9 +1559,7 @@ class TestExtractFunctionsREPLIntegration:
 
         @trace SPEC-01.22
         """
-        result = basic_env.execute(
-            "funcs = extract_functions('def test(): pass')"
-        )
+        result = basic_env.execute("funcs = extract_functions('def test(): pass')")
 
         assert result.success is True
         assert "funcs" in basic_env.locals

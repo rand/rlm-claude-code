@@ -396,7 +396,7 @@ class MemoryEvolution:
                 node_ids=[node_id],
                 from_tier=node.tier,
                 to_tier=target_tier,
-                reasoning=f"Single node promotion via promote_node()",
+                reasoning="Single node promotion via promote_node()",
             )
 
         return result

@@ -179,7 +179,7 @@ class GuaranteeChecker:
             return CheckResult(
                 allowed=False,
                 violation_type=ViolationType.COST_WOULD_EXCEED,
-                message=f"Estimated operation would exceed cost limit",
+                message="Estimated operation would exceed cost limit",
             )
 
         # Check duration

@@ -1467,18 +1467,14 @@ result = lst[0]
 
     def test_list_comprehension_with_dict_access(self, restricted_env):
         """List comprehension with dict subscript access."""
-        result = restricted_env.execute(
-            "sizes = [len(files[f]) for f in files.keys()]"
-        )
+        result = restricted_env.execute("sizes = [len(files[f]) for f in files.keys()]")
 
         assert result.success is True, f"Failed: {result.error}"
         assert len(restricted_env.locals["sizes"]) == 3
 
     def test_dict_comprehension(self, restricted_env):
         """Dict comprehension works in restricted mode."""
-        result = restricted_env.execute(
-            "lengths = {k: len(v) for k, v in files.items()}"
-        )
+        result = restricted_env.execute("lengths = {k: len(v) for k, v in files.items()}")
 
         assert result.success is True, f"Failed: {result.error}"
         assert "main.py" in restricted_env.locals["lengths"]

@@ -270,7 +270,7 @@ class TestLimitEnforcementProperties:
         # Make exactly max_executions REPL executions
         for i in range(max_executions):
             allowed, _ = tracker.can_execute_repl()
-            assert allowed, f"Should allow execution {i+1}/{max_executions}"
+            assert allowed, f"Should allow execution {i + 1}/{max_executions}"
             tracker.record_repl_execution()
 
         # Next should be blocked
@@ -331,7 +331,6 @@ class TestBurnRateProperties:
 
         @trace 3e0.5
         """
-        from src.enhanced_budget import BurnRateMetrics
 
         # Calculate expected time (in seconds)
         if burn_rate > 0:

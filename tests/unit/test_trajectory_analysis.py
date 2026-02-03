@@ -481,7 +481,9 @@ class TestVerificationMetrics:
         assert analysis.metrics.verified_claims == 7  # 4 + 3
         assert analysis.metrics.flagged_claims == 1  # 1 + 0
         assert analysis.metrics.verification_retries == 1  # 0 + 1
-        assert analysis.metrics.avg_verification_confidence == pytest.approx(0.85)  # (0.80 + 0.90) / 2
+        assert analysis.metrics.avg_verification_confidence == pytest.approx(
+            0.85
+        )  # (0.80 + 0.90) / 2
 
     def test_verification_metrics_in_to_dict(self, analyzer):
         """Verification metrics appear in to_dict output."""

@@ -731,9 +731,9 @@ def get_cost_tracker() -> CostTracker:
 
 # Target tokens per execution mode (SPEC-14.65)
 MODE_TOKEN_TARGETS: dict[str, int] = {
-    "micro": 2_000,      # SPEC-14.65: Micro <2K tokens
+    "micro": 2_000,  # SPEC-14.65: Micro <2K tokens
     "balanced": 25_000,  # SPEC-14.65: Balanced <25K tokens
-    "thorough": 100_000, # SPEC-14.65: Thorough <100K tokens
+    "thorough": 100_000,  # SPEC-14.65: Thorough <100K tokens
 }
 
 # Budget warning thresholds (SPEC-14.63)
@@ -827,7 +827,7 @@ class SessionBudget:
                     tokens_used=self._total_tokens,
                     tokens_budget=self.budget_tokens,
                     message=f"Session budget at {threshold_percent}%: "
-                            f"{self._total_tokens:,} / {self.budget_tokens:,} tokens",
+                    f"{self._total_tokens:,} / {self.budget_tokens:,} tokens",
                 )
                 warnings.append(warning)
 
@@ -930,7 +930,7 @@ class SessionBudget:
     def reset(self) -> None:
         """Reset session budget tracking."""
         self._total_tokens = 0
-        self._mode_tokens = {k: 0 for k in self._mode_tokens}
+        self._mode_tokens = dict.fromkeys(self._mode_tokens, 0)
         self._warnings_emitted.clear()
 
 

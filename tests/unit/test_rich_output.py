@@ -5,26 +5,22 @@ Tests SPEC-13: Rich Output Formatting
 """
 
 import os
-from io import StringIO
 from unittest.mock import patch
 
 import pytest
-from rich.console import Console
-from rich.text import Text
 
 from src.rich_output import (
+    SYMBOL_COLORS,
     Color,
     DepthTracker,
     OutputConfig,
     RLMConsole,
     Symbol,
-    SYMBOL_COLORS,
     build_tree_prefix,
     create_budget_gauge,
     format_token_count,
     get_console,
 )
-
 
 # ============================================================================
 # Symbol Tests (SPEC-13.01-13.02)
@@ -539,9 +535,7 @@ class TestVerificationOutput:
         assert "[c1]" in captured.out
         assert "unsupported" in captured.out
 
-    def test_emit_verification_report_with_gaps(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_emit_verification_report_with_gaps(self, capsys: pytest.CaptureFixture[str]) -> None:
         """emit_verification_report shows evidence gaps."""
         config = OutputConfig(colors=False)
         console = RLMConsole(config)
@@ -571,9 +565,7 @@ class TestVerificationOutput:
             claims_verified=2,
             claims_flagged=8,
             confidence=0.30,
-            flagged_claims=[
-                (f"c{i}", f"Claim {i} text", "reason") for i in range(10)
-            ],
+            flagged_claims=[(f"c{i}", f"Claim {i} text", "reason") for i in range(10)],
         )
 
         captured = capsys.readouterr()

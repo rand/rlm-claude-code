@@ -82,9 +82,19 @@ class QueryFeatures:
 
         # Complexity indicators
         complexity_words = [
-            "analyze", "compare", "evaluate", "synthesize", "architect",
-            "design", "implement", "optimize", "debug", "refactor",
-            "implications", "tradeoffs", "considerations",
+            "analyze",
+            "compare",
+            "evaluate",
+            "synthesize",
+            "architect",
+            "design",
+            "implement",
+            "optimize",
+            "debug",
+            "refactor",
+            "implications",
+            "tradeoffs",
+            "considerations",
         ]
         complexity_count = sum(1 for w in complexity_words if w in query_lower)
         complexity = min(1.0, base_complexity + complexity_count * 0.15)
@@ -174,16 +184,30 @@ class DifficultyEstimator:
 
         # Reasoning depth
         reasoning_indicators = [
-            "if", "then", "because", "therefore", "implies",
-            "conclude", "reason", "logic", "proof", "derive",
+            "if",
+            "then",
+            "because",
+            "therefore",
+            "implies",
+            "conclude",
+            "reason",
+            "logic",
+            "proof",
+            "derive",
         ]
         reasoning_count = sum(1 for w in reasoning_indicators if w in query_lower)
         reasoning_depth = min(1.0, features.estimated_complexity + reasoning_count * 0.1)
 
         # Domain specificity
         specific_terms = [
-            "algorithm", "architecture", "protocol", "theorem",
-            "paradigm", "methodology", "framework", "specification",
+            "algorithm",
+            "architecture",
+            "protocol",
+            "theorem",
+            "paradigm",
+            "methodology",
+            "framework",
+            "specification",
         ]
         specificity_count = sum(1 for w in specific_terms if w in query_lower)
         domain_specificity = min(1.0, len(features.domain_hints) * 0.2 + specificity_count * 0.15)
@@ -350,11 +374,14 @@ class LearnedRouter:
 
         # Difficulty match
         overall_diff = difficulty.overall_difficulty()
-        if overall_diff < 0.3 and profile.name == "haiku":
-            quality_score += 0.1
-        elif overall_diff > 0.7 and profile.name == "opus":
-            quality_score += 0.1
-        elif 0.3 <= overall_diff <= 0.7 and profile.name == "sonnet":
+        if (
+            overall_diff < 0.3
+            and profile.name == "haiku"
+            or overall_diff > 0.7
+            and profile.name == "opus"
+            or 0.3 <= overall_diff <= 0.7
+            and profile.name == "sonnet"
+        ):
             quality_score += 0.1
 
         # Domain match
@@ -368,9 +395,8 @@ class LearnedRouter:
 
         # Combine with cost sensitivity
         final_score = (
-            (1 - self.cost_sensitivity) * quality_score
-            + self.cost_sensitivity * cost_score
-        )
+            1 - self.cost_sensitivity
+        ) * quality_score + self.cost_sensitivity * cost_score
 
         return min(1.0, final_score)
 
@@ -466,8 +492,8 @@ class LearnedRouter:
             reward = quality_score if success else -0.5
 
             # Incremental update with learning rate
-            self.learned_adjustments[domain][model] = (
-                current + self.config.learning_rate * (reward - current)
+            self.learned_adjustments[domain][model] = current + self.config.learning_rate * (
+                reward - current
             )
 
     def get_outcome_history(self) -> list[OutcomeRecord]:

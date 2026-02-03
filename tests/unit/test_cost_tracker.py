@@ -4,10 +4,7 @@ Unit tests for cost_tracker module.
 Implements: Spec §8.1 Phase 3 - Cost Tracking tests
 """
 
-import pytest
-
 from src.cost_tracker import (
-    BudgetAlert,
     CostComponent,
     CostEstimate,
     CostTracker,

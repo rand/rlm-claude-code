@@ -10,9 +10,10 @@ and execution with exploration/exploitation balance via UCB1.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 
 class LATSPhase(Enum):
@@ -115,9 +116,7 @@ def compute_ucb1(
     if node_visits == 0:
         return float("inf")
 
-    exploration = exploration_weight * math.sqrt(
-        2 * math.log(parent_visits) / node_visits
-    )
+    exploration = exploration_weight * math.sqrt(2 * math.log(parent_visits) / node_visits)
 
     return exploitation + exploration
 
@@ -339,19 +338,23 @@ class LATSOrchestrator:
         steps = []
         if preferred_tools:
             primary_tool = preferred_tools[0]
-            steps.append({
-                "tool": primary_tool,
-                "action": f"Use {primary_tool} to {task_type.replace('_', ' ')}",
-            })
+            steps.append(
+                {
+                    "tool": primary_tool,
+                    "action": f"Use {primary_tool} to {task_type.replace('_', ' ')}",
+                }
+            )
 
             # Add fallback steps if enabled
             if self.config.fallback_enabled:
                 fallbacks = self.matrix.get_fallback_sequence(primary_tool)
                 for fallback in fallbacks[:2]:  # Limit fallbacks
-                    steps.append({
-                        "tool": fallback,
-                        "action": f"Fallback: use {fallback} if {primary_tool} fails",
-                    })
+                    steps.append(
+                        {
+                            "tool": fallback,
+                            "action": f"Fallback: use {fallback} if {primary_tool} fails",
+                        }
+                    )
 
         return ToolPlan(
             goal=query,

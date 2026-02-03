@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import settings, Phase, Verbosity
+from hypothesis import Phase, Verbosity, settings
 
 # Add project root to path so we can import src package
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -52,8 +52,8 @@ settings.register_profile(
 # Load profile from environment, default to 'dev'
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "dev"))
 
-from src.types import Message, MessageRole, SessionContext, ToolOutput
 from src.config import RLMConfig
+from src.types import Message, MessageRole, SessionContext, ToolOutput
 
 
 @pytest.fixture
@@ -116,12 +116,6 @@ def debug_context():
 # Markers
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "hypothesis: property-based tests"
-    )
-    config.addinivalue_line(
-        "markers", "slow: tests that take >1s"
-    )
-    config.addinivalue_line(
-        "markers", "security: security-related tests"
-    )
+    config.addinivalue_line("markers", "hypothesis: property-based tests")
+    config.addinivalue_line("markers", "slow: tests that take >1s")
+    config.addinivalue_line("markers", "security: security-related tests")

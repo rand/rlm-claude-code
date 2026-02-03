@@ -4,22 +4,22 @@ Unit tests for context_manager module.
 Implements: Spec §3 tests
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.types import Message, MessageRole, SessionContext, ToolOutput
 from src.context_manager import (
+    create_micro_context,
     externalize_context,
     externalize_conversation,
     externalize_files,
     externalize_tool_outputs,
-    MicroModeContext,
-    create_micro_context,
 )
+from src.types import Message, MessageRole, SessionContext, ToolOutput
 
 
 class TestExternalizeConversation:

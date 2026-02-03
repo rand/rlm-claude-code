@@ -264,10 +264,7 @@ class TestFeedbackStore:
             store.add_feedback("c", "Claim", FeedbackType.FALSE_POSITIVE)
 
         calibration = store.get_calibration_data()
-        assert any(
-            r["type"] == "raise_threshold"
-            for r in calibration["recommendations"]
-        )
+        assert any(r["type"] == "raise_threshold" for r in calibration["recommendations"])
 
 
 class TestRecordFeedback:
@@ -425,9 +422,7 @@ class TestFeedbackStoreEdgeCases:
             store2 = FeedbackStore(path)
 
             # Add via store1
-            feedback_id = store1.add_feedback(
-                "c1", "Claim 1", FeedbackType.CORRECT
-            )
+            feedback_id = store1.add_feedback("c1", "Claim 1", FeedbackType.CORRECT)
 
             # Read via store2
             feedback = store2.get_feedback(feedback_id)

@@ -179,9 +179,7 @@ class CircuitBreaker:
         self._failure_count += 1
         self._last_failure_time = time.time()
 
-        self._failure_records.append(
-            FailureRecord(error_type=error_type, message=message)
-        )
+        self._failure_records.append(FailureRecord(error_type=error_type, message=message))
 
         if self._state == CircuitState.HALF_OPEN:
             # Failure in half-open reopens circuit
@@ -274,9 +272,7 @@ class CircuitBreaker:
             success_count=self._success_count,
             open_count=self._open_count,
             last_failure_time=(
-                datetime.fromtimestamp(self._last_failure_time)
-                if self._last_failure_time
-                else None
+                datetime.fromtimestamp(self._last_failure_time) if self._last_failure_time else None
             ),
             last_state_change=datetime.fromtimestamp(self._last_state_change),
         )

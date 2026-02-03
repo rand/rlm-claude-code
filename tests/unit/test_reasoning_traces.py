@@ -67,7 +67,6 @@ class TestDecisionNodeTypes:
 
         @trace SPEC-04.01
         """
-        from src.reasoning_traces import DecisionNode
 
         # Create node of each subtype
         if subtype == "goal":
@@ -769,7 +768,9 @@ class TestEvidenceLinking:
         option_id = reasoning_traces.add_option(decision_id, "Verify")
         reasoning_traces.choose_option(decision_id, option_id)
         action_id = reasoning_traces.create_action(decision_id, "Verify assumption")
-        outcome_id = reasoning_traces.create_outcome(action_id, "Assumption was wrong", success=False)
+        outcome_id = reasoning_traces.create_outcome(
+            action_id, "Assumption was wrong", success=False
+        )
 
         fact_id = memory_store.create_node("fact", "Old assumption X holds")
         edge_id = reasoning_traces.record_outcome_invalidates_fact(outcome_id, fact_id)
@@ -2450,9 +2451,7 @@ class TestGetEpistemicGaps:
 
         # Create goal -> decision -> claim
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id,
             claim_text="The API returns JSON",
@@ -2483,9 +2482,7 @@ class TestGetEpistemicGaps:
         """
         # Create goal -> decision -> claim
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id,
             claim_text="The function handles errors",
@@ -2513,9 +2510,7 @@ class TestGetEpistemicGaps:
         """
         # Create goal -> decision -> claim
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id,
             claim_text="The database uses WAL mode",
@@ -2544,9 +2539,7 @@ class TestGetEpistemicGaps:
         """
         # Create goal -> decision -> claim
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id,
             claim_text="The function exists in utils.py",
@@ -2571,9 +2564,7 @@ class TestGetEpistemicGaps:
         """
         # Create goal with multiple claims
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create 3 claims
         claim1_id = reasoning_traces.create_claim(
@@ -2613,9 +2604,7 @@ class TestGetEpistemicGaps:
         @trace SPEC-16.17
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Test phantom_citation mapping
         claim_id = reasoning_traces.create_claim(
@@ -2637,9 +2626,7 @@ class TestGetEpistemicGaps:
         @trace SPEC-16.17
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id, claim_text="The config file is required"
         )
@@ -2745,20 +2732,12 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create multiple claims
-        claim1_id = reasoning_traces.create_claim(
-            parent_id=decision_id, claim_text="First claim"
-        )
-        claim2_id = reasoning_traces.create_claim(
-            parent_id=decision_id, claim_text="Second claim"
-        )
-        claim3_id = reasoning_traces.create_claim(
-            parent_id=decision_id, claim_text="Third claim"
-        )
+        claim1_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text="First claim")
+        claim2_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text="Second claim")
+        claim3_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text="Third claim")
 
         report = reasoning_traces.get_verification_report(goal_id)
 
@@ -2775,17 +2754,13 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create claims with different verification results
         claim1_id = reasoning_traces.create_claim(
             parent_id=decision_id, claim_text="Verified claim"
         )
-        claim2_id = reasoning_traces.create_claim(
-            parent_id=decision_id, claim_text="Flagged claim"
-        )
+        claim2_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text="Flagged claim")
 
         # Verify with different results
         good_model = self._make_mock_verification_model(evidence_support=0.9)
@@ -2810,9 +2785,7 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
         claim_id = reasoning_traces.create_claim(
             parent_id=decision_id, claim_text="Problematic claim"
         )
@@ -2836,9 +2809,7 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create claims with different support levels
         claim1_id = reasoning_traces.create_claim(
@@ -2859,21 +2830,15 @@ class TestGetVerificationReport:
         # Overall confidence should be average of combined scores
         assert 0.0 < report.overall_confidence < 1.0
 
-    def test_get_verification_report_sets_should_retry_for_critical_gaps(
-        self, reasoning_traces
-    ):
+    def test_get_verification_report_sets_should_retry_for_critical_gaps(self, reasoning_traces):
         """
         get_verification_report sets should_retry when critical gaps exist.
 
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
-        claim_id = reasoning_traces.create_claim(
-            parent_id=decision_id, claim_text="Bad claim"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
+        claim_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text="Bad claim")
 
         # Create critical gap (phantom_citation is critical)
         mock_model = self._make_mock_verification_model(
@@ -2897,15 +2862,11 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create multiple claims, most with low support (not flagged but low rate)
         for i in range(4):
-            claim_id = reasoning_traces.create_claim(
-                parent_id=decision_id, claim_text=f"Claim {i}"
-            )
+            claim_id = reasoning_traces.create_claim(parent_id=decision_id, claim_text=f"Claim {i}")
             # 3 out of 4 will have low support
             if i < 3:
                 model = self._make_mock_verification_model(
@@ -2928,9 +2889,7 @@ class TestGetVerificationReport:
         @trace SPEC-16.18
         """
         goal_id = reasoning_traces.create_goal(content="Test goal")
-        decision_id = reasoning_traces.create_decision(
-            goal_id=goal_id, content="Test decision"
-        )
+        decision_id = reasoning_traces.create_decision(goal_id=goal_id, content="Test decision")
 
         # Create claims with good verification
         for i in range(3):
@@ -2962,6 +2921,7 @@ class TestEpistemicSchemaMigration:
         @trace SPEC-16.19
         """
         import sqlite3
+
         from src.memory_store import MemoryStore
         from src.reasoning_traces import ReasoningTraces
 
@@ -3033,6 +2993,7 @@ class TestEpistemicSchemaMigration:
         @trace SPEC-16.19
         """
         import sqlite3
+
         from src.memory_store import MemoryStore
         from src.reasoning_traces import ReasoningTraces
 
@@ -3110,6 +3071,7 @@ class TestEpistemicSchemaMigration:
         @trace SPEC-16.19
         """
         import sqlite3
+
         from src.memory_store import MemoryStore
         from src.reasoning_traces import ReasoningTraces
 

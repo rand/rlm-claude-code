@@ -21,7 +21,6 @@ from src.context_manager import (
 )
 from src.types import Message, MessageRole, SessionContext, ToolOutput
 
-
 # Strategies for generating test data
 message_strategy = st.builds(
     Message,

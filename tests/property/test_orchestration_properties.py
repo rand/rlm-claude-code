@@ -7,26 +7,23 @@ Tests invariants and properties of:
 - AutoActivation
 """
 
-import string
-
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
+from src.auto_activation import (
+    ActivationDecision,
+    ActivationStats,
+    ActivationThresholds,
+    AutoActivator,
+)
 from src.orchestration_schema import (
     ExecutionMode,
     ModelTier,
     OrchestrationPlan,
     ToolAccessLevel,
 )
-from src.user_preferences import UserPreferences, PreferencesManager
-from src.auto_activation import (
-    ActivationDecision,
-    ActivationThresholds,
-    ActivationStats,
-    AutoActivator,
-)
 from src.types import SessionContext
-
+from src.user_preferences import PreferencesManager, UserPreferences
 
 # Strategies for generating test data
 execution_modes = st.sampled_from(list(ExecutionMode))
@@ -52,8 +49,12 @@ class TestOrchestrationPlanProperties:
     )
     @settings(max_examples=100)
     def test_plan_creation_valid(
-        self, activate: bool, mode: ExecutionMode, tool_access: ToolAccessLevel,
-        depth: int, max_tokens: int
+        self,
+        activate: bool,
+        mode: ExecutionMode,
+        tool_access: ToolAccessLevel,
+        depth: int,
+        max_tokens: int,
     ):
         """Plans can be created with any valid combination of parameters."""
         plan = OrchestrationPlan(

@@ -106,10 +106,7 @@ class RLMCheckpoint:
 
     def get_resumable_operations(self) -> list[dict[str, Any]]:
         """Get operations that can be resumed (not completed)."""
-        return [
-            op for op in self.pending_operations
-            if op.get("status") != "completed"
-        ]
+        return [op for op in self.pending_operations if op.get("status") != "completed"]
 
     # SPEC-09.26: Version compatibility
 

@@ -8,8 +8,6 @@ Tests cover:
 - Telemetry emission
 """
 
-import pytest
-
 from src.smart_pipeline import (
     PipelineConfig,
     PipelineResult,
@@ -17,7 +15,6 @@ from src.smart_pipeline import (
     PipelineTelemetry,
     SmartPipeline,
     StageResult,
-    StageTelemetry,
 )
 
 
@@ -450,7 +447,8 @@ class TestSmartPipelineIntegration:
         # Results should be independent
         assert result1.telemetry != result2.telemetry or (
             result1.telemetry.total_duration_ms != result2.telemetry.total_duration_ms
-            or result1.telemetry.total_duration_ms == result2.telemetry.total_duration_ms  # Both valid
+            or result1.telemetry.total_duration_ms
+            == result2.telemetry.total_duration_ms  # Both valid
         )
 
     def test_pipeline_to_dict(self):

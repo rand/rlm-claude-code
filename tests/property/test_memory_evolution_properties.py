@@ -70,9 +70,7 @@ class TestDecayProperties:
         factor=factor_strategy,
     )
     @settings(max_examples=100, deadline=None)
-    def test_decay_never_increases_confidence(
-        self, initial_confidence, days_since_access, factor
-    ):
+    def test_decay_never_increases_confidence(self, initial_confidence, days_since_access, factor):
         """
         Decay should never increase confidence.
 
@@ -95,9 +93,7 @@ class TestDecayProperties:
                 confidence=initial_confidence,
             )
 
-            store._set_last_accessed(
-                node_id, datetime.now() - timedelta(days=days_since_access)
-            )
+            store._set_last_accessed(node_id, datetime.now() - timedelta(days=days_since_access))
 
             evolution.decay(factor=factor, min_confidence=0.01)
 
@@ -167,9 +163,7 @@ class TestDecayProperties:
         factor=factor_strategy,
     )
     @settings(max_examples=50, deadline=None)
-    def test_decay_monotonic_with_time(
-        self, initial_confidence, days1, days2, factor
-    ):
+    def test_decay_monotonic_with_time(self, initial_confidence, days1, days2, factor):
         """
         More time should result in more decay.
 
@@ -196,9 +190,7 @@ class TestDecayProperties:
                 tier="longterm",
                 confidence=initial_confidence,
             )
-            store1._set_last_accessed(
-                node1, datetime.now() - timedelta(days=days1)
-            )
+            store1._set_last_accessed(node1, datetime.now() - timedelta(days=days1))
             evolution1.decay(factor=factor, min_confidence=0.01)
             result1 = store1.get_node(node1, include_archived=True)
 
@@ -212,9 +204,7 @@ class TestDecayProperties:
                 tier="longterm",
                 confidence=initial_confidence,
             )
-            store2._set_last_accessed(
-                node2, datetime.now() - timedelta(days=days2)
-            )
+            store2._set_last_accessed(node2, datetime.now() - timedelta(days=days2))
             evolution2.decay(factor=factor, min_confidence=0.01)
             result2 = store2.get_node(node2, include_archived=True)
 

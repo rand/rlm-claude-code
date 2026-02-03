@@ -1,5 +1,7 @@
 """Tests for session isolation in memory store (SPEC-02 extension)."""
+
 import pytest
+
 from src.memory_store import MemoryStore
 
 
@@ -19,7 +21,7 @@ class TestSessionIsolation:
             node_type="fact",
             content="Session A working on auth",
             tier="task",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
 
         # Session B stores a different fact
@@ -27,14 +29,11 @@ class TestSessionIsolation:
             node_type="fact",
             content="Session B working on billing",
             tier="task",
-            metadata={"session_id": "session-b"}
+            metadata={"session_id": "session-b"},
         )
 
         # Query from Session A perspective
-        results_a = store.query_nodes(
-            tier="task",
-            session_id="session-a"
-        )
+        results_a = store.query_nodes(tier="task", session_id="session-a")
 
         # Should only see Session A's node
         assert len(results_a) == 1
@@ -46,14 +45,14 @@ class TestSessionIsolation:
             node_type="fact",
             content="Auth uses JWT tokens",
             tier="session",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
 
         store.create_node(
             node_type="fact",
             content="Billing uses Stripe",
             tier="session",
-            metadata={"session_id": "session-b"}
+            metadata={"session_id": "session-b"},
         )
 
         results_a = store.query_nodes(tier="session", session_id="session-a")
@@ -70,7 +69,7 @@ class TestSessionIsolation:
             node_type="fact",
             content="PostgreSQL runs on port 5433",
             tier="longterm",
-            metadata={"session_id": "session-a"}  # Origin session
+            metadata={"session_id": "session-a"},  # Origin session
         )
 
         # Both sessions should see longterm facts
@@ -86,15 +85,11 @@ class TestSessionIsolation:
             node_type="fact",
             content="Old API endpoint deprecated",
             tier="archive",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
 
         # Need to include_archived to see archive tier
-        results_b = store.query_nodes(
-            tier="archive",
-            session_id="session-b",
-            include_archived=True
-        )
+        results_b = store.query_nodes(tier="archive", session_id="session-b", include_archived=True)
         assert len(results_b) == 1
 
     def test_no_session_id_returns_all(self, store):
@@ -103,13 +98,13 @@ class TestSessionIsolation:
             node_type="fact",
             content="Fact from session A",
             tier="task",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
         store.create_node(
             node_type="fact",
             content="Fact from session B",
             tier="task",
-            metadata={"session_id": "session-b"}
+            metadata={"session_id": "session-b"},
         )
 
         # No session_id filter should return all
@@ -119,10 +114,7 @@ class TestSessionIsolation:
     def test_session_id_with_no_matches(self, store):
         """Query with non-existent session_id should return empty."""
         store.create_node(
-            node_type="fact",
-            content="Some fact",
-            tier="task",
-            metadata={"session_id": "session-a"}
+            node_type="fact", content="Some fact", tier="task", metadata={"session_id": "session-a"}
         )
 
         results = store.query_nodes(tier="task", session_id="session-nonexistent")
@@ -135,7 +127,7 @@ class TestSessionIsolation:
             node_type="fact",
             content="Legacy fact without session",
             tier="task",
-            metadata={}  # No session_id
+            metadata={},  # No session_id
         )
 
         # Node with session_id
@@ -143,7 +135,7 @@ class TestSessionIsolation:
             node_type="fact",
             content="New fact with session",
             tier="task",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
 
         # Querying with session_id should only return nodes that match
@@ -172,15 +164,11 @@ class TestContextVolumeLimits:
                 node_type="fact",
                 content=f"Fact number {i}",
                 tier="session",
-                metadata={"session_id": "session-a"}
+                metadata={"session_id": "session-a"},
             )
 
         # Query with limit
-        results = store.query_nodes(
-            tier="session",
-            session_id="session-a",
-            limit=10
-        )
+        results = store.query_nodes(tier="session", session_id="session-a", limit=10)
 
         assert len(results) == 10
 
@@ -191,21 +179,17 @@ class TestContextVolumeLimits:
             content="Low confidence fact",
             tier="session",
             confidence=0.3,
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
         store.create_node(
             node_type="fact",
             content="High confidence fact",
             tier="session",
             confidence=0.9,
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
 
-        results = store.query_nodes(
-            tier="session",
-            session_id="session-a",
-            limit=1
-        )
+        results = store.query_nodes(tier="session", session_id="session-a", limit=1)
 
         assert results[0].content == "High confidence fact"
 
@@ -217,7 +201,7 @@ class TestContextVolumeLimits:
                 node_type="fact",
                 content=f"Fact {i}",
                 tier="session",
-                metadata={"session_id": "session-a"}
+                metadata={"session_id": "session-a"},
             )
 
         results = store.query_nodes(tier="session", session_id="session-a")

@@ -6,20 +6,17 @@ Tests: SPEC-01.02 (Phase 4 - Lazy Context Loading)
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
-import pytest
-
 from src.context_manager import (
-    LazyContextVariable,
-    LazyContextConfig,
-    LazyFileLoader,
-    LazyContext,
-    create_lazy_context,
     DEFAULT_MEMORY_LIMIT_MB,
+    LazyContext,
+    LazyContextConfig,
+    LazyContextVariable,
+    LazyFileLoader,
+    create_lazy_context,
 )
-from src.types import SessionContext, Message, MessageRole, ToolOutput
+from src.types import Message, MessageRole, SessionContext, ToolOutput
 
 
 class TestLazyContextVariable:

@@ -6,19 +6,12 @@ Tests for confidence-weighted synthesis.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
-import pytest
-
 from src.confidence_synthesis import (
     ConfidenceEstimator,
-    ConfidenceFlags,
     RecursiveResult,
     SynthesisStrategy,
     WeightedSynthesizer,
 )
-
 
 # --- Test fixtures ---
 

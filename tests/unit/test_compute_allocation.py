@@ -6,21 +6,15 @@ Tests for compute-optimal allocation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any
-
 import pytest
 
 from src.compute_allocation import (
     AllocationReasoning,
     ComputeAllocation,
     ComputeAllocator,
-    DifficultyEstimate,
     ModelTier,
     TaskType,
 )
-
 
 # --- Test fixtures ---
 
@@ -39,10 +33,7 @@ def create_complex_query() -> str:
 
 def create_code_context(num_files: int = 1, lines_per_file: int = 100) -> dict[str, str]:
     """Create mock code context."""
-    return {
-        f"file{i}.py": f"# File {i}\n" + "x = 1\n" * lines_per_file
-        for i in range(num_files)
-    }
+    return {f"file{i}.py": f"# File {i}\n" + "x = 1\n" * lines_per_file for i in range(num_files)}
 
 
 # --- SPEC-07.10: Dynamic compute allocation ---

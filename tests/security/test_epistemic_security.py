@@ -18,24 +18,20 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.epistemic.claim_extractor import (
-    ClaimExtractor,
     ExtractedClaim,
-    ExtractionResult,
     extract_evidence_references,
 )
+from src.epistemic.similarity import text_overlap_similarity
 from src.epistemic.types import (
     ClaimVerification,
     EpistemicGap,
     HallucinationReport,
     VerificationConfig,
 )
-from src.epistemic.similarity import text_overlap_similarity
 from src.epistemic.verification_feedback import (
     FeedbackStore,
     FeedbackType,
-    record_feedback,
 )
-
 
 # ============================================================================
 # Prompt Injection Tests

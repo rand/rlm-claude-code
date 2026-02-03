@@ -9,8 +9,6 @@ Tests cover:
 - Compression metrics
 """
 
-import pytest
-
 from src.context_compression import (
     AbstractiveCompressor,
     AutoCompressor,
@@ -505,8 +503,7 @@ class TestIntegration:
             "Stack trace:\n"
             "  File 'db.py', line 42\n"
             "Analysis shows network issues.\n"
-            "Recommendation: Check firewall settings.\n"
-            + "Additional context. " * 100
+            "Recommendation: Check firewall settings.\n" + "Additional context. " * 100
         )
 
         result = compressor.compress(content)
@@ -533,8 +530,7 @@ class TestIntegration:
         content = (
             "CRITICAL ERROR: System failure at 2024-01-01 10:00:00\n"
             "Error code: ERR_CONNECTION_REFUSED\n"
-            "File: /app/src/network.py:142\n"
-            + "Background information. " * 200
+            "File: /app/src/network.py:142\n" + "Background information. " * 200
         )
 
         result = compressor.compress(content)

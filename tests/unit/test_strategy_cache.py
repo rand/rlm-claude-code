@@ -5,7 +5,6 @@ Implements: Spec §8.1 Phase 3 - Strategy Learning tests
 """
 
 import tempfile
-import time
 from pathlib import Path
 
 import pytest

@@ -115,9 +115,7 @@ class DecisionConfidence:
         for field_name in ("activation", "model_tier", "depth", "strategy"):
             value = getattr(self, field_name)
             if not 0.0 <= value <= 1.0:
-                raise ValueError(
-                    f"DecisionConfidence.{field_name} must be in [0, 1], got {value}"
-                )
+                raise ValueError(f"DecisionConfidence.{field_name} must be in [0, 1], got {value}")
 
     def average(self) -> float:
         """Average confidence across all dimensions."""
@@ -370,7 +368,10 @@ class OrchestrationPlan:
 
     Example:
         >>> from src.orchestration_schema import (
-        ...     OrchestrationPlan, ModelTier, ExecutionMode, ToolAccessLevel
+        ...     OrchestrationPlan,
+        ...     ModelTier,
+        ...     ExecutionMode,
+        ...     ToolAccessLevel,
         ... )
         >>> plan = OrchestrationPlan(
         ...     activate_rlm=True,
@@ -379,7 +380,7 @@ class OrchestrationPlan:
         ...     primary_model="claude-opus-4-5-20251101",
         ...     depth_budget=3,
         ...     execution_mode=ExecutionMode.THOROUGH,
-        ...     tool_access=ToolAccessLevel.FULL
+        ...     tool_access=ToolAccessLevel.FULL,
         ... )
         >>> plan.activate_rlm  # Check if RLM will be used
         True
@@ -565,8 +566,7 @@ class OrchestrationPlan:
 
         Example:
             >>> plan = OrchestrationPlan.from_strategy(
-            ...     ExecutionStrategy.RECURSIVE_DEBUG,
-            ...     activation_reason="multi_layer_error"
+            ...     ExecutionStrategy.RECURSIVE_DEBUG, activation_reason="multi_layer_error"
             ... )
             >>> plan.depth_budget
             3

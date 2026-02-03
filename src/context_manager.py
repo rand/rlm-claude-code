@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
 from collections.abc import Callable
 
-
 # Default memory limit for lazy context cache (100MB)
 DEFAULT_MEMORY_LIMIT_MB = 100
 

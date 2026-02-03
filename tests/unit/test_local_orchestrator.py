@@ -4,18 +4,18 @@ Unit tests for LocalOrchestrator module.
 Tests local model-based orchestration for RLM activation decisions.
 """
 
-import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from src.local_orchestrator import (
+    RECOMMENDED_CONFIGS,
+    LocalInferenceResult,
     LocalModelBackend,
     LocalModelConfig,
-    LocalInferenceResult,
     LocalOrchestrator,
     MLXRunner,
     OllamaRunner,
-    RECOMMENDED_CONFIGS,
 )
 
 
@@ -162,7 +162,9 @@ class TestLocalOrchestrator:
             context_summary="- Context tokens: 50,000",
         )
         assert decision["activate_rlm"] is True
-        assert "discovery_required" in decision["signals"] or "debugging_deep" in decision["signals"]
+        assert (
+            "discovery_required" in decision["signals"] or "debugging_deep" in decision["signals"]
+        )
 
     def test_heuristic_decision_synthesis_task(self, orchestrator):
         """Heuristic correctly identifies synthesis tasks."""

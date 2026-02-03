@@ -9,7 +9,6 @@ stores feedback in memory, and uses it to calibrate future verification.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import uuid
 from dataclasses import dataclass, field

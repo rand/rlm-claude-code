@@ -7,8 +7,7 @@ Implements: Plan verification for tiktoken accuracy.
 import sys
 from pathlib import Path
 
-import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -17,14 +16,11 @@ from src.cost_tracker import (
     CostComponent,
     CostEstimate,
     CostTracker,
-    TokenUsage,
     compute_affordable_depth,
     compute_affordable_tokens,
     estimate_call_cost,
     estimate_tokens,
-    estimate_tokens_accurate,
     get_model_costs,
-    is_tiktoken_available,
 )
 
 
@@ -111,9 +107,7 @@ class TestCostEstimateProperties:
         st.sampled_from(["opus", "sonnet", "haiku"]),
     )
     @settings(max_examples=100)
-    def test_cost_estimate_non_negative(
-        self, input_tokens: int, output_tokens: int, model: str
-    ):
+    def test_cost_estimate_non_negative(self, input_tokens: int, output_tokens: int, model: str):
         """Cost estimate is always non-negative."""
         estimate = CostEstimate(
             estimated_input_tokens=input_tokens,
@@ -155,9 +149,7 @@ class TestCostEstimateProperties:
         st.sampled_from(["opus", "sonnet", "haiku"]),
     )
     @settings(max_examples=50)
-    def test_cost_scales_with_tokens(
-        self, input_tokens: int, output_tokens: int, model: str
-    ):
+    def test_cost_scales_with_tokens(self, input_tokens: int, output_tokens: int, model: str):
         """Cost increases when tokens increase."""
         estimate1 = CostEstimate(
             estimated_input_tokens=input_tokens,
@@ -215,9 +207,7 @@ class TestCostTrackerProperties:
     @settings(max_examples=30)
     def test_remaining_budget_decreases(self, budget_tokens: int, budget_dollars: float):
         """Remaining budget decreases after recording usage."""
-        tracker = CostTracker(
-            budget_tokens=budget_tokens, budget_dollars=budget_dollars
-        )
+        tracker = CostTracker(budget_tokens=budget_tokens, budget_dollars=budget_dollars)
 
         initial_remaining_tokens = tracker.remaining_tokens
         initial_remaining_dollars = tracker.remaining_budget
@@ -294,9 +284,7 @@ class TestModelCostProperties:
         st.integers(min_value=100, max_value=10_000),
     )
     @settings(max_examples=30)
-    def test_opus_more_expensive_than_haiku(
-        self, input_tokens: int, output_tokens: int
-    ):
+    def test_opus_more_expensive_than_haiku(self, input_tokens: int, output_tokens: int):
         """Opus is always more expensive than Haiku for same tokens."""
         opus_cost = estimate_call_cost(input_tokens, output_tokens, "opus")
         haiku_cost = estimate_call_cost(input_tokens, output_tokens, "haiku")

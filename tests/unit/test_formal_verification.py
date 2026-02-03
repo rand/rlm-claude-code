@@ -10,14 +10,11 @@ Tests cover:
 - Automatic correction attempts
 """
 
-import pytest
-
 from src.formal_verification import (
     AutoCorrector,
     CodeChange,
     Constraint,
     ConstraintType,
-    CorrectionAttempt,
     CorrectionResult,
     PostconditionGenerator,
     PreconditionGenerator,
@@ -274,8 +271,9 @@ class TestRefactoringPostconditions:
 
         postconditions = generator.generate(change)
 
-        assert any("call_sites" in c.name.lower() or "type" in c.name.lower()
-                   for c in postconditions)
+        assert any(
+            "call_sites" in c.name.lower() or "type" in c.name.lower() for c in postconditions
+        )
 
     def test_generates_tests_pass(self):
         """SPEC-07.23: Generate 'All tests still pass'."""

@@ -13,9 +13,10 @@ Provides structured exploration of reasoning paths with:
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterator
+from typing import Any
 
 
 class SearchStrategy(Enum):

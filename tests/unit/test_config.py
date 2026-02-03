@@ -5,7 +5,6 @@ Implements: Spec §5.3 Router Configuration tests
 """
 
 import json
-import pytest
 import sys
 import tempfile
 from pathlib import Path
@@ -15,12 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.config import (
     ActivationConfig,
+    CostConfig,
     DepthConfig,
     HybridConfig,
-    TrajectoryConfig,
     ModelConfig,
-    CostConfig,
     RLMConfig,
+    TrajectoryConfig,
     default_config,
 )
 

@@ -8,10 +8,6 @@ Tests cover:
 - Sandbox security
 """
 
-import math
-import re
-from typing import Any
-
 import pytest
 
 from src.proactive_computation import (

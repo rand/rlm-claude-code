@@ -12,8 +12,8 @@ import time
 import pytest
 
 from src.progress import (
-    CancelledException,
     CancellationToken,
+    CancelledException,
     CompositeProgressCallback,
     ConsoleProgressCallback,
     NullProgressCallback,
@@ -187,27 +187,31 @@ class TestProgressContext:
         token = CancellationToken()
         token.cancel()
 
-        with pytest.raises(CancelledException):
-            with ProgressContext(
+        with (
+            pytest.raises(CancelledException),
+            ProgressContext(
                 operation=OperationType.INDEXING,
                 total=10,
                 callback=callback,
                 cancellation_token=token,
-            ) as ctx:
-                ctx.advance(1)
+            ) as ctx,
+        ):
+            ctx.advance(1)
 
     def test_error_handling(self):
         """Errors are reported to callback."""
         callback = MockProgressCallback()
 
-        with pytest.raises(ValueError):
-            with ProgressContext(
+        with (
+            pytest.raises(ValueError),
+            ProgressContext(
                 operation=OperationType.INDEXING,
                 total=10,
                 callback=callback,
-            ) as ctx:
-                ctx.advance(5)
-                raise ValueError("Test error")
+            ) as ctx,
+        ):
+            ctx.advance(5)
+            raise ValueError("Test error")
 
         assert len(callback.errors) == 1
         assert isinstance(callback.errors[0][0], ValueError)
@@ -334,9 +338,8 @@ class TestCreateProgressContext:
 
         token.cancel()
 
-        with pytest.raises(CancelledException):
-            with ctx:
-                ctx.advance(1)
+        with pytest.raises(CancelledException), ctx:
+            ctx.advance(1)
 
     def test_custom_message_template(self):
         """Create with custom message template."""

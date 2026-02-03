@@ -4,7 +4,6 @@ Unit tests for user_preferences module.
 Implements: Spec §8.1 Phase 2 - User Preferences tests
 """
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -12,8 +11,8 @@ import pytest
 
 from src.orchestration_schema import ExecutionMode, ToolAccessLevel
 from src.user_preferences import (
-    PreferenceUpdate,
     PreferencesManager,
+    PreferenceUpdate,
     UserPreferences,
     handle_rlm_command,
 )

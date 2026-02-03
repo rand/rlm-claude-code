@@ -1,8 +1,9 @@
 """Event emission helpers."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ def emit_event(event: dict[str, Any], source: str) -> None:
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 
     if "timestamp" not in event:
-        event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        event["timestamp"] = datetime.now(UTC).isoformat()
     event.setdefault("source", source)
 
     # Append to JSONL log

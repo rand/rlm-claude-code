@@ -287,13 +287,9 @@ class TestMemoryAddExperience:
         memory_add_experience = memory_repl_env.globals["memory_add_experience"]
 
         # Successful experience
-        node_id1 = memory_add_experience(
-            content="Good experience", outcome="Worked", success=True
-        )
+        node_id1 = memory_add_experience(content="Good experience", outcome="Worked", success=True)
         # Failed experience
-        node_id2 = memory_add_experience(
-            content="Bad experience", outcome="Failed", success=False
-        )
+        node_id2 = memory_add_experience(content="Bad experience", outcome="Failed", success=False)
 
         store = memory_repl_env._memory_store
 

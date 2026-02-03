@@ -4,7 +4,6 @@ Unit tests for types module.
 Implements: Spec §3.1 tests
 """
 
-import pytest
 import sys
 from pathlib import Path
 
@@ -12,13 +11,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.types import (
+    ActivationDecision,
+    ExecutionResult,
     Message,
     MessageRole,
     SessionContext,
-    ToolOutput,
     TaskComplexitySignals,
-    ActivationDecision,
-    ExecutionResult,
+    ToolOutput,
     VerificationResult,
 )
 

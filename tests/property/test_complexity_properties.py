@@ -8,18 +8,17 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.complexity_classifier import (
     extract_complexity_signals,
-    should_activate_rlm,
     is_definitely_simple,
+    should_activate_rlm,
 )
 from src.types import Message, MessageRole, SessionContext, ToolOutput
-
 
 # Strategies for generating test data
 message_strategy = st.builds(
@@ -116,9 +115,7 @@ class TestActivationDecisionProperties:
     @settings(max_examples=50)
     def test_manual_rlm_override_always_activates(self, prompt, context):
         """Manual RLM override always activates regardless of content."""
-        should_activate, reason = should_activate_rlm(
-            prompt, context, rlm_mode_forced=True
-        )
+        should_activate, reason = should_activate_rlm(prompt, context, rlm_mode_forced=True)
 
         assert should_activate is True
         assert reason == "manual_override"
@@ -127,9 +124,7 @@ class TestActivationDecisionProperties:
     @settings(max_examples=50)
     def test_simple_mode_override_never_activates(self, prompt, context):
         """Simple mode override never activates regardless of content."""
-        should_activate, reason = should_activate_rlm(
-            prompt, context, simple_mode_forced=True
-        )
+        should_activate, reason = should_activate_rlm(prompt, context, simple_mode_forced=True)
 
         assert should_activate is False
         assert reason == "simple_mode_forced"

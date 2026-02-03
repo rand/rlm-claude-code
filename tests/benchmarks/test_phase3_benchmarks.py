@@ -11,8 +11,6 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from src.cache import (
     ContextCache,
     LRUCache,

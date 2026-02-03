@@ -8,10 +8,6 @@ Tests cover:
 - Configuration options
 """
 
-from typing import Any
-
-import pytest
-
 from src.tree_of_thoughts import (
     SearchStrategy,
     ThoughtNode,

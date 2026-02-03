@@ -312,9 +312,7 @@ class TestStrategyTracker:
             )
 
         # New strategy should be selected (infinity UCB)
-        selected = tracker.select_strategy(
-            StrategyType.CACHING, ["lru", "fifo"], method="ucb"
-        )
+        selected = tracker.select_strategy(StrategyType.CACHING, ["lru", "fifo"], method="ucb")
 
         assert selected == "fifo"  # Untried strategy
 
@@ -343,9 +341,7 @@ class TestStrategyTracker:
                 )
             )
 
-        selected = tracker.select_strategy(
-            StrategyType.CACHING, ["lru", "fifo"], method="greedy"
-        )
+        selected = tracker.select_strategy(StrategyType.CACHING, ["lru", "fifo"], method="greedy")
 
         assert selected == "lru"  # Higher success rate
 

@@ -397,9 +397,7 @@ class TestTrajectoryReplayer:
         """Seeks to event type backward."""
         replayer.seek(3)  # Go to end
 
-        event = replayer.seek_to_event_type(
-            TrajectoryEventType.REPL_EXEC, forward=False
-        )
+        event = replayer.seek_to_event_type(TrajectoryEventType.REPL_EXEC, forward=False)
 
         assert event is not None
         assert event.type == TrajectoryEventType.REPL_EXEC
@@ -454,9 +452,7 @@ class TestVisualizeTrajectory:
 
     def test_visualize_with_events(self, sample_events):
         """Visualizes from events."""
-        content = visualize_trajectory(
-            events=sample_events, output_format=ExportFormat.JSON
-        )
+        content = visualize_trajectory(events=sample_events, output_format=ExportFormat.JSON)
 
         data = json.loads(content)
         assert len(data["events"]) == 2
@@ -492,8 +488,6 @@ class TestVisualizeTrajectory:
 
     def test_visualize_markdown(self, sample_events):
         """Visualizes as markdown."""
-        content = visualize_trajectory(
-            events=sample_events, output_format=ExportFormat.MARKDOWN
-        )
+        content = visualize_trajectory(events=sample_events, output_format=ExportFormat.MARKDOWN)
 
         assert "# RLM Trajectory" in content

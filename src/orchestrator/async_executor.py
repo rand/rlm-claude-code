@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from ..types import DeferredOperation
 
@@ -233,7 +234,7 @@ class AsyncExecutor:
                 # Try to set result (first to succeed wins)
                 if not result_future.done():
                     result_future.set_result((index, result))
-            except Exception as e:
+            except Exception:
                 # Don't set exception - let other ops try
                 pass
 
@@ -255,7 +256,7 @@ class AsyncExecutor:
                 winner_index=winner_index,
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             execution_time = (time.perf_counter() - start_time) * 1000
             return SpeculativeResult(
                 success=False,

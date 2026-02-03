@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -18,19 +18,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # Strategies
 # =============================================================================
 
-heuristic_name_strategy = st.sampled_from([
-    "complexity_high",
-    "discovery_required",
-    "multi_file_change",
-    "architecture_decision",
-    "recursive_reasoning",
-    "unbounded_exploration",
-])
+heuristic_name_strategy = st.sampled_from(
+    [
+        "complexity_high",
+        "discovery_required",
+        "multi_file_change",
+        "architecture_decision",
+        "recursive_reasoning",
+        "unbounded_exploration",
+    ]
+)
 
-query_strategy = st.text(min_size=1, max_size=200, alphabet=st.characters(
-    whitelist_categories=("L", "N", "P", "S"),
-    whitelist_characters=" ",
-))
+query_strategy = st.text(
+    min_size=1,
+    max_size=200,
+    alphabet=st.characters(
+        whitelist_categories=("L", "N", "P", "S"),
+        whitelist_characters=" ",
+    ),
+)
 
 
 def make_telemetry():
@@ -225,7 +231,7 @@ class TestDecisionLoggingProperties:
         """
         telemetry = make_telemetry()
 
-        triggered = heuristics_checked[:len(heuristics_checked) // 2]  # Half triggered
+        triggered = heuristics_checked[: len(heuristics_checked) // 2]  # Half triggered
 
         telemetry.log_decision_with_heuristics(
             query="test query",
@@ -285,7 +291,9 @@ class TestOutcomeRecordingProperties:
         rlm_helpful=st.booleans(),
     )
     @settings(max_examples=30, deadline=None)
-    def test_outcome_updates_decision(self, execution_succeeded, actual_depth, actual_cost, rlm_helpful):
+    def test_outcome_updates_decision(
+        self, execution_succeeded, actual_depth, actual_cost, rlm_helpful
+    ):
         """
         Recording an outcome should update the corresponding decision.
 
@@ -387,7 +395,6 @@ class TestHeuristicWeightProperties:
 
         @trace 3e0.6
         """
-        from src.orchestration_telemetry import HeuristicAccuracy
 
         telemetry = make_telemetry()
 
@@ -404,11 +411,15 @@ class TestHeuristicWeightProperties:
                 tp, fp, fn = 0, 10, 10
 
             telemetry._heuristic_outcomes.append(
-                type("Outcome", (), {
-                    "heuristic_name": name,
-                    "triggered": True,
-                    "actual_rlm_needed": True if tp > 0 else False,
-                })()
+                type(
+                    "Outcome",
+                    (),
+                    {
+                        "heuristic_name": name,
+                        "triggered": True,
+                        "actual_rlm_needed": True if tp > 0 else False,
+                    },
+                )()
             )
 
         # Get weights

@@ -11,7 +11,6 @@ from src.smart_router import (
     MODEL_CATALOG,
     OPTIMAL_MODELS,
     FallbackExecutor,
-    ModelOption,
     ModelTier,
     QueryClassification,
     QueryClassifier,
@@ -65,7 +64,9 @@ class TestModelCatalog:
 
     def test_has_anthropic_models(self):
         """Catalog has Anthropic models."""
-        anthropic_models = [m for m, opt in MODEL_CATALOG.items() if opt.provider == Provider.ANTHROPIC]
+        anthropic_models = [
+            m for m, opt in MODEL_CATALOG.items() if opt.provider == Provider.ANTHROPIC
+        ]
         assert "opus" in anthropic_models
         assert "sonnet" in anthropic_models
         assert "haiku" in anthropic_models
@@ -178,9 +179,7 @@ class TestQueryClassifier:
 
     def test_custom_patterns(self):
         """Can add custom patterns."""
-        custom = QueryClassifier(
-            custom_patterns={QueryType.CODE: [r"\bcustom_pattern\b"]}
-        )
+        custom = QueryClassifier(custom_patterns={QueryType.CODE: [r"\bcustom_pattern\b"]})
 
         result = custom.classify("This has custom_pattern in it")
         assert result.query_type == QueryType.CODE

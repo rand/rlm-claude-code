@@ -529,9 +529,7 @@ class VerificationChain:
 
         return VerificationResult(
             status=post_result.status,
-            passed_constraints=(
-                pre_result.passed_constraints + post_result.passed_constraints
-            ),
+            passed_constraints=(pre_result.passed_constraints + post_result.passed_constraints),
             failed_constraints=post_result.failed_constraints,
             preconditions_checked=True,
             postconditions_checked=True,

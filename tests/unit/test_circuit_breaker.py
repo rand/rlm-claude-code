@@ -10,7 +10,6 @@ Tests cover:
 - Metrics exposure
 """
 
-import pytest
 import time
 
 from src.circuit_breaker import (
@@ -18,8 +17,8 @@ from src.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerMetrics,
     CircuitState,
-    FallbackResult,
     FailureRecord,
+    FallbackResult,
     RecoveryTest,
     TierCircuitBreaker,
 )

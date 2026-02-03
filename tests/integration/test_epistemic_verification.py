@@ -11,42 +11,30 @@ Tests the full verification pipeline:
 - Trajectory integration
 """
 
-import asyncio
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.epistemic import (
     AuditResult,
-    BatchAuditResult,
     ClaimExtractor,
-    ClaimVerification,
-    ConsistencyChecker,
-    ConsistencyConfig,
-    EpistemicGap,
     EvidenceAuditor,
     ExtractedClaim,
-    ExtractionResult,
     FeedbackStore,
     FeedbackType,
-    HallucinationReport,
+    PromptTemplate,
     VerificationCache,
     VerificationConfig,
     VerificationMode,
     format_prompt,
-    PromptTemplate,
-    record_feedback,
 )
 from src.epistemic.types import OnFailureAction
 from src.rich_output import OutputConfig, RLMConsole
 from src.trajectory import TrajectoryEvent, TrajectoryEventType, VerificationPayload
 from src.trajectory_analysis import TrajectoryAnalyzer
-
 
 # ============================================================================
 # Mock API Client for Testing
@@ -86,12 +74,14 @@ class MockLLMClient:
         """Mock complete method."""
         user_content = messages[0]["content"] if messages else ""
 
-        self.calls.append({
-            "messages": messages,
-            "system": system,
-            "model": model,
-            "max_tokens": max_tokens,
-        })
+        self.calls.append(
+            {
+                "messages": messages,
+                "system": system,
+                "model": model,
+                "max_tokens": max_tokens,
+            }
+        )
 
         # Find matching response
         for key, response in self.responses.items():
@@ -178,7 +168,9 @@ class TestFullVerificationPipeline:
     ) -> None:
         """Test pipeline identifies flagged claims."""
         # Configure mock to return low support
-        mock_client.responses["Evaluate"] = """{"support_score": 0.3, "issues": ["unsupported"], "reasoning": "No evidence"}"""
+        mock_client.responses["Evaluate"] = (
+            """{"support_score": 0.3, "issues": ["unsupported"], "reasoning": "No evidence"}"""
+        )
 
         auditor = EvidenceAuditor(client=mock_client, support_threshold=0.7)
 
@@ -216,11 +208,7 @@ class TestFullVerificationPipeline:
         result = await auditor.audit_claims(claims, evidence)
 
         # Should have phantom citation gap
-        has_phantom = any(
-            g.gap_type == "phantom_citation"
-            for r in result.results
-            for g in r.gaps
-        )
+        has_phantom = any(g.gap_type == "phantom_citation" for r in result.results for g in r.gaps)
         assert has_phantom or result.results[0].verification.is_flagged
 
 
@@ -485,10 +473,12 @@ class TestEndToEndScenarios:
     @pytest.mark.asyncio
     async def test_verify_simple_response(self) -> None:
         """Test verification of a simple response."""
-        mock_client = MockLLMClient({
-            "Extract": """[{"claim": "The sum is 10", "original_span": "sum is 10", "cites_evidence": [], "is_critical": true, "confidence": 0.9}]""",
-            "Evaluate": """{"support_score": 1.0, "issues": [], "reasoning": "Exact match"}""",
-        })
+        mock_client = MockLLMClient(
+            {
+                "Extract": """[{"claim": "The sum is 10", "original_span": "sum is 10", "cites_evidence": [], "is_critical": true, "confidence": 0.9}]""",
+                "Evaluate": """{"support_score": 1.0, "issues": [], "reasoning": "Exact match"}""",
+            }
+        )
 
         extractor = ClaimExtractor(client=mock_client)
         auditor = EvidenceAuditor(client=mock_client)
@@ -509,10 +499,12 @@ class TestEndToEndScenarios:
     @pytest.mark.asyncio
     async def test_verify_response_with_errors(self) -> None:
         """Test verification catches errors in response."""
-        mock_client = MockLLMClient({
-            "Extract": """[{"claim": "The file has 100 lines", "original_span": "100 lines", "cites_evidence": ["main.py"], "is_critical": false, "confidence": 0.8}]""",
-            "Evaluate": """{"support_score": 0.2, "issues": ["unsupported"], "reasoning": "File only has 50 lines"}""",
-        })
+        mock_client = MockLLMClient(
+            {
+                "Extract": """[{"claim": "The file has 100 lines", "original_span": "100 lines", "cites_evidence": ["main.py"], "is_critical": false, "confidence": 0.8}]""",
+                "Evaluate": """{"support_score": 0.2, "issues": ["unsupported"], "reasoning": "File only has 50 lines"}""",
+            }
+        )
 
         extractor = ClaimExtractor(client=mock_client)
         auditor = EvidenceAuditor(client=mock_client, support_threshold=0.7)

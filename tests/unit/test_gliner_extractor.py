@@ -4,14 +4,12 @@ Unit tests for GLiNER extractor module.
 Tests cover both GLiNER-enabled and fallback modes.
 """
 
-import pytest
-
 from src.gliner_extractor import (
+    SIGNAL_SCHEMA,
+    SIGNAL_WEIGHTS,
     ExtractedSignal,
     GLiNERConfig,
     GLiNERExtractor,
-    SIGNAL_SCHEMA,
-    SIGNAL_WEIGHTS,
     SignalExtractionResult,
     is_gliner_available,
 )
@@ -22,7 +20,14 @@ class TestSignalSchema:
 
     def test_expected_signal_types(self):
         """All expected signal types exist."""
-        expected = ["discovery", "synthesis", "debugging", "architectural", "uncertainty", "multi_file"]
+        expected = [
+            "discovery",
+            "synthesis",
+            "debugging",
+            "architectural",
+            "uncertainty",
+            "multi_file",
+        ]
         for signal_type in expected:
             assert signal_type in SIGNAL_SCHEMA
 

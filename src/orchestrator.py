@@ -671,7 +671,8 @@ class RLMOrchestrator:
         # Apply sampling if in sample mode
         if self.verification_config.mode == "sample":
             sampled_claims = [
-                c for i, c in enumerate(claims)
+                c
+                for i, c in enumerate(claims)
                 if self.verification_config.should_verify_claim(i, c.is_critical)
             ]
             claims = sampled_claims
@@ -766,13 +767,13 @@ class RLMOrchestrator:
             for gap in critical_gaps:
                 gap_type = getattr(gap, "gap_type", "unknown")
                 if gap_type == "phantom_citation":
-                    prompt_parts.append(f"- **Phantom citation**: Referenced source not found\n")
+                    prompt_parts.append("- **Phantom citation**: Referenced source not found\n")
                 elif gap_type == "contradicted":
-                    prompt_parts.append(f"- **Contradiction**: Evidence contradicts claim\n")
+                    prompt_parts.append("- **Contradiction**: Evidence contradicts claim\n")
                 elif gap_type == "unsupported":
-                    prompt_parts.append(f"- **Unsupported**: No evidence supports this claim\n")
+                    prompt_parts.append("- **Unsupported**: No evidence supports this claim\n")
                 elif gap_type == "over_extrapolation":
-                    prompt_parts.append(f"- **Over-extrapolation**: Claim goes beyond evidence\n")
+                    prompt_parts.append("- **Over-extrapolation**: Claim goes beyond evidence\n")
             prompt_parts.append("\n")
 
         # List available evidence
@@ -784,14 +785,16 @@ class RLMOrchestrator:
             prompt_parts.append("\n")
 
         # Instructions for grounded response
-        prompt_parts.extend([
-            "### Requirements for Revised Response\n",
-            "1. **Only make claims you can support** with the available evidence\n",
-            "2. **Cite specific sources** when making factual claims (e.g., 'According to src/file.py...')\n",
-            "3. **Acknowledge uncertainty** if evidence is incomplete or ambiguous\n",
-            "4. **Remove or qualify** any claims that cannot be verified\n\n",
-            "Provide a revised FINAL: <answer> that addresses these issues.",
-        ])
+        prompt_parts.extend(
+            [
+                "### Requirements for Revised Response\n",
+                "1. **Only make claims you can support** with the available evidence\n",
+                "2. **Cite specific sources** when making factual claims (e.g., 'According to src/file.py...')\n",
+                "3. **Acknowledge uncertainty** if evidence is incomplete or ambiguous\n",
+                "4. **Remove or qualify** any claims that cannot be verified\n\n",
+                "Provide a revised FINAL: <answer> that addresses these issues.",
+            ]
+        )
 
         return "".join(prompt_parts)
 

@@ -12,18 +12,15 @@ Tests the full integration of:
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from src.auto_activation import AutoActivator, check_auto_activation
-from src.complexity_classifier import should_activate_rlm, extract_complexity_signals
-from src.intelligent_orchestrator import IntelligentOrchestrator
-from src.orchestration_schema import ExecutionMode, OrchestrationPlan, ToolAccessLevel
-from src.strategy_cache import StrategyCache, FeatureExtractor
+from src.auto_activation import AutoActivator
+from src.complexity_classifier import extract_complexity_signals, should_activate_rlm
+from src.orchestration_schema import ExecutionMode, ToolAccessLevel
+from src.strategy_cache import FeatureExtractor, StrategyCache
 from src.tool_bridge import ToolBridge, ToolPermissions
 from src.trajectory import TrajectoryEvent, TrajectoryEventType
-from src.trajectory_analysis import TrajectoryAnalyzer, StrategyType
-from src.types import SessionContext, ToolOutput, Message, MessageRole
-from src.user_preferences import UserPreferences, PreferencesManager
+from src.trajectory_analysis import StrategyType, TrajectoryAnalyzer
+from src.types import Message, MessageRole, SessionContext, ToolOutput
+from src.user_preferences import PreferencesManager, UserPreferences
 
 
 class TestAutoActivationIntegration:
@@ -307,18 +304,20 @@ class TestStrategyLearningIntegration:
 
             # Create and populate cache
             cache1 = StrategyCache(persistence_path=path)
-            analysis = TrajectoryAnalyzer().analyze([
-                TrajectoryEvent(
-                    type=TrajectoryEventType.REPL_EXEC,
-                    depth=0,
-                    content="grep pattern in file",
-                ),
-                TrajectoryEvent(
-                    type=TrajectoryEventType.FINAL,
-                    depth=0,
-                    content="Found matches",
-                ),
-            ])
+            analysis = TrajectoryAnalyzer().analyze(
+                [
+                    TrajectoryEvent(
+                        type=TrajectoryEventType.REPL_EXEC,
+                        depth=0,
+                        content="grep pattern in file",
+                    ),
+                    TrajectoryEvent(
+                        type=TrajectoryEventType.FINAL,
+                        depth=0,
+                        content="Found matches",
+                    ),
+                ]
+            )
             cache1.add("Search for pattern in code.py", analysis)
             cache1.save()
 

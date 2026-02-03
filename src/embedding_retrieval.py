@@ -11,8 +11,7 @@ import json
 import math
 import sqlite3
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 
 @dataclass
@@ -45,7 +44,9 @@ class HybridSearchResult:
     @property
     def hybrid_score(self) -> float:
         """Calculate hybrid score from semantic and keyword scores."""
-        return self.hybrid_alpha * self.semantic_score + (1 - self.hybrid_alpha) * self.keyword_score
+        return (
+            self.hybrid_alpha * self.semantic_score + (1 - self.hybrid_alpha) * self.keyword_score
+        )
 
 
 class EmbeddingProvider(ABC):

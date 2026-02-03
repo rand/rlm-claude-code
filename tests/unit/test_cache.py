@@ -282,7 +282,9 @@ class TestREPLStateCache:
         import json
 
         with open(state_file, "w") as f:
-            json.dump({"session_id": "session1", "saved_at": time.time(), "state": {"key": "modified"}}, f)
+            json.dump(
+                {"session_id": "session1", "saved_at": time.time(), "state": {"key": "modified"}}, f
+            )
 
         # Should still get memory cached version
         loaded = cache.load_state("session1")

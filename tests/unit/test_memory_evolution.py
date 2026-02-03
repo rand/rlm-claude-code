@@ -4,11 +4,9 @@ Unit tests for memory evolution.
 Implements: Spec SPEC-03 tests for consolidation, promotion, and decay.
 """
 
-import math
 import os
 import sys
 import tempfile
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -110,9 +108,7 @@ class TestConsolidation:
         node = memory_store.get_node(node_id)
         assert node.tier == "session"
 
-    def test_consolidate_identifies_related_by_hyperedge(
-        self, memory_evolution, memory_store
-    ):
+    def test_consolidate_identifies_related_by_hyperedge(self, memory_evolution, memory_store):
         """
         consolidate should identify related facts by shared hyperedges.
 
@@ -225,9 +221,7 @@ class TestConsolidation:
         # Edge weight should be increased (strengthened)
         assert edge.weight >= 1.0
 
-    def test_consolidate_preserves_detail_via_summarizes_edge(
-        self, memory_evolution, memory_store
-    ):
+    def test_consolidate_preserves_detail_via_summarizes_edge(self, memory_evolution, memory_store):
         """
         consolidate should preserve detail via "summarizes" edges.
 
@@ -326,9 +320,7 @@ class TestPromotion:
         assert hasattr(result, "promoted_count")
         assert hasattr(result, "crystallized_count")
 
-    def test_promote_respects_confidence_threshold(
-        self, memory_evolution, memory_store
-    ):
+    def test_promote_respects_confidence_threshold(self, memory_evolution, memory_store):
         """
         promote should only promote nodes with confidence >= threshold.
 
@@ -416,9 +408,7 @@ class TestPromotion:
         freq_node = memory_store.get_node(frequently_accessed)
         assert freq_node.tier == "longterm"
 
-    def test_promote_creates_crystallized_summaries(
-        self, memory_evolution, memory_store
-    ):
+    def test_promote_creates_crystallized_summaries(self, memory_evolution, memory_store):
         """
         promote should create crystallized summary nodes for complex subgraphs.
 
@@ -458,9 +448,7 @@ class TestPromotion:
         # Should have created crystallized nodes
         assert result.crystallized_count >= 0  # May or may not crystallize
 
-    def test_promote_preserves_originals_until_confirmed(
-        self, memory_evolution, memory_store
-    ):
+    def test_promote_preserves_originals_until_confirmed(self, memory_evolution, memory_store):
         """
         promote should preserve original nodes in session tier until confirmed.
 
@@ -551,9 +539,7 @@ class TestDecay:
         )
 
         # Manually set last_accessed to 10 days ago
-        memory_store._set_last_accessed(
-            node_id, datetime.now() - timedelta(days=10)
-        )
+        memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=10))
 
         # Apply decay with factor=0.95
         memory_evolution.decay(factor=0.95, min_confidence=0.1)
@@ -577,9 +563,7 @@ class TestDecay:
             confidence=1.0,
         )
 
-        memory_store._set_last_accessed(
-            node_id, datetime.now() - timedelta(days=5)
-        )
+        memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=5))
 
         memory_evolution.decay()  # No factor specified
 
@@ -642,9 +626,7 @@ class TestDecay:
         )
 
         # Set to very old access time
-        memory_store._set_last_accessed(
-            node_id, datetime.now() - timedelta(days=100)
-        )
+        memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=100))
 
         memory_evolution.decay(factor=0.95, min_confidence=0.3)
 
@@ -665,9 +647,7 @@ class TestDecay:
         )
 
         # Set to old access time to trigger decay
-        memory_store._set_last_accessed(
-            node_id, datetime.now() - timedelta(days=50)
-        )
+        memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=50))
 
         memory_evolution.decay()  # No min_confidence specified
 
@@ -689,9 +669,7 @@ class TestDecay:
             confidence=0.32,
         )
 
-        memory_store._set_last_accessed(
-            node_id, datetime.now() - timedelta(days=100)
-        )
+        memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=100))
 
         memory_evolution.decay(factor=0.95, min_confidence=0.3)
 
@@ -773,9 +751,7 @@ class TestArchiveTier:
         assert node is not None
         assert node.tier == "longterm"
 
-    def test_restore_node_returns_false_for_nonexistent(
-        self, memory_evolution, memory_store
-    ):
+    def test_restore_node_returns_false_for_nonexistent(self, memory_evolution, memory_store):
         """
         restore_node should return False for nonexistent node.
 
@@ -861,14 +837,16 @@ class TestEvolutionConfiguration:
 
         config_file = tmp_path / "rlm-config.json"
         config_file.write_text(
-            json.dumps({
-                "memory": {
-                    "consolidation_threshold": 0.6,
-                    "promotion_threshold": 0.9,
-                    "decay_factor": 0.9,
-                    "decay_min_confidence": 0.2,
+            json.dumps(
+                {
+                    "memory": {
+                        "consolidation_threshold": 0.6,
+                        "promotion_threshold": 0.9,
+                        "decay_factor": 0.9,
+                        "decay_min_confidence": 0.2,
+                    }
                 }
-            })
+            )
         )
 
         evolution = MemoryEvolution(memory_store, config_path=str(config_file))
@@ -995,9 +973,7 @@ class TestDecayFormula:
                 confidence=initial,
             )
 
-            memory_store._set_last_accessed(
-                node_id, datetime.now() - timedelta(days=days)
-            )
+            memory_store._set_last_accessed(node_id, datetime.now() - timedelta(days=days))
 
             memory_evolution.decay(factor=factor, min_confidence=0.01)
 

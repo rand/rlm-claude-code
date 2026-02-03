@@ -10,8 +10,10 @@ Tests cover:
 - Conflict detection
 """
 
+from collections.abc import Callable
+from typing import Any
+
 import pytest
-from typing import Any, Callable
 
 from src.repl_plugin import (
     BuiltinPlugins,

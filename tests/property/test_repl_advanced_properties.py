@@ -57,9 +57,7 @@ class TestMapReduceProperties:
         reduce_prompt=prompt_strategy,
     )
     @settings(max_examples=100, deadline=None)
-    def test_always_returns_deferred_batch(
-        self, content, map_prompt, reduce_prompt
-    ):
+    def test_always_returns_deferred_batch(self, content, map_prompt, reduce_prompt):
         """
         map_reduce always returns a DeferredBatch regardless of input.
 
@@ -83,9 +81,7 @@ class TestMapReduceProperties:
         reduce_prompt=prompt_strategy,
     )
     @settings(max_examples=50)
-    def test_deterministic_batch_structure(
-        self, content, map_prompt, reduce_prompt
-    ):
+    def test_deterministic_batch_structure(self, content, map_prompt, reduce_prompt):
         """
         Same inputs produce same batch structure (deterministic).
 
@@ -266,7 +262,9 @@ class TestMapReduceOperationProperties:
     @given(
         content=st.text(
             # Use ASCII-like characters for predictable tokenization
-            alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters=" \n"),
+            alphabet=st.characters(
+                whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters=" \n"
+            ),
             min_size=200,
             max_size=5000,
         ),
@@ -347,9 +345,7 @@ class TestMapReduceEdgeCases:
         reduce_prompt=st.text(min_size=1, max_size=500),
     )
     @settings(max_examples=30)
-    def test_special_characters_in_prompts(
-        self, map_prompt, reduce_prompt
-    ):
+    def test_special_characters_in_prompts(self, map_prompt, reduce_prompt):
         """
         Special characters in prompts should not break processing.
 

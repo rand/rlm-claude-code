@@ -528,7 +528,6 @@ class AutoActivator:
             return plan
 
         # Non-micro modes: use strategy-based planning
-        from .smart_router import ModelTier
 
         # Map execution mode to strategy
         strategy_map = {

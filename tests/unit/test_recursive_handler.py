@@ -4,26 +4,27 @@ Unit tests for recursive_handler module.
 Implements: Spec §4.2, §6.4 tests
 """
 
-import pytest
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.config import CostConfig, DepthConfig, ModelConfig, RLMConfig
+from src.recursive_handler import RecursiveREPL
+from src.router_integration import CompletionResult, ModelRouter
 from src.types import (
+    CostLimitError,
     Message,
     MessageRole,
+    RecursionDepthError,
+    RecursiveCallResult,
     SessionContext,
     ToolOutput,
-    RecursiveCallResult,
-    CostLimitError,
-    RecursionDepthError,
 )
-from src.config import RLMConfig, DepthConfig, CostConfig, ModelConfig
-from src.recursive_handler import RecursiveREPL
-from src.router_integration import ModelRouter, CompletionResult
 
 
 @pytest.fixture
@@ -369,7 +370,9 @@ class TestRecursiveREPLPromptBuilding:
         prompt = repl._build_sub_prompt("Query", "my context data")
         assert "my context data" in prompt
 
-    def test_build_sub_prompt_truncates_large_context(self, basic_context, mock_router, basic_config):
+    def test_build_sub_prompt_truncates_large_context(
+        self, basic_context, mock_router, basic_config
+    ):
         """Sub-prompt truncates very large context."""
         repl = RecursiveREPL(
             context=basic_context,

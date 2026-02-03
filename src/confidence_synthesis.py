@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 
 @dataclass
@@ -131,15 +130,30 @@ class ConfidenceEstimator:
         coherence_score += step_factor * 0.3
 
         # Check for logical flow indicators
-        flow_words = ["first", "then", "next", "finally", "therefore", "because", "analyzed", "identified"]
-        flow_count = sum(
-            1 for step in trace for word in flow_words if word.lower() in step.lower()
-        )
+        flow_words = [
+            "first",
+            "then",
+            "next",
+            "finally",
+            "therefore",
+            "because",
+            "analyzed",
+            "identified",
+        ]
+        flow_count = sum(1 for step in trace for word in flow_words if word.lower() in step.lower())
         flow_factor = min(1.0, flow_count / 3)
         coherence_score += flow_factor * 0.4
 
         # Penalize uncertainty indicators
-        uncertainty_words = ["maybe", "perhaps", "uncertain", "unclear", "unsure", "actually no", "guess"]
+        uncertainty_words = [
+            "maybe",
+            "perhaps",
+            "uncertain",
+            "unclear",
+            "unsure",
+            "actually no",
+            "guess",
+        ]
         uncertainty_count = sum(
             1 for step in trace for word in uncertainty_words if word.lower() in step.lower()
         )
@@ -186,9 +200,7 @@ class ConfidenceEstimator:
         if not sources:
             return 0.5  # No sources, neutral confidence
 
-        reliable_count = sum(
-            1 for source in sources if source.lower() in self.RELIABLE_SOURCES
-        )
+        reliable_count = sum(1 for source in sources if source.lower() in self.RELIABLE_SOURCES)
 
         # Base confidence plus bonus for reliable sources
         base = 0.3

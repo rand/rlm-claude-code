@@ -8,19 +8,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.async_executor import (
     AsyncExecutor,
-    ExecutionResult,
     PartialFailureResult,
     SpeculativeExecution,
 )
 from src.types import DeferredOperation
-
 
 # --- Test fixtures ---
 
@@ -175,8 +172,7 @@ class TestMaxConcurrency:
         await executor.execute_parallel(ops, mock_execute)
 
         assert max_observed_concurrent <= max_concurrent, (
-            f"Max concurrent was {max_observed_concurrent}, "
-            f"should be <= {max_concurrent}"
+            f"Max concurrent was {max_observed_concurrent}, should be <= {max_concurrent}"
         )
 
 
