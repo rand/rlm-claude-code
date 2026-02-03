@@ -14,7 +14,9 @@ func main() {
 	input, err := hookio.ReadInput()
 	if err != nil {
 		hookio.Debug("Failed to read input: %v", err)
-		os.Exit(1)
+		// Fail forward - approve and continue rather than blocking
+		hookio.Approve("")
+		return
 	}
 
 	if os.Getenv("RLM_DISABLED") == "1" {

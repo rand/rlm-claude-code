@@ -17,7 +17,9 @@ func main() {
 	input, err := hookio.ReadInput()
 	if err != nil {
 		hookio.Debug("Failed to read input: %v", err)
-		os.Exit(1)
+		// Fail forward - provide minimal context rather than blocking
+		hookio.SessionContext("RLM: input parse error, continuing with defaults")
+		return
 	}
 
 	hookio.Debug("Session start: source=%s, cwd=%s", input.Source, input.CWD)
