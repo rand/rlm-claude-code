@@ -13,6 +13,13 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
 HOOK_NAME="$1"
 
+# Bootstrap venv if missing (Claude Code expects .venv/bin/activate for Python plugins)
+if [ ! -d "$PLUGIN_ROOT/.venv" ] && [ -f "$PLUGIN_ROOT/pyproject.toml" ]; then
+    if command -v uv &> /dev/null; then
+        (cd "$PLUGIN_ROOT" && uv sync --quiet 2>/dev/null) || true
+    fi
+fi
+
 if [ -z "$HOOK_NAME" ]; then
     echo "Usage: $0 <hook-name>" >&2
     exit 1
