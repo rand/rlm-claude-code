@@ -19,61 +19,29 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from src.config import USE_RLM_CORE
+import rlm_core
 
 if TYPE_CHECKING:
     from src.api_client import APIResponse
 
-# ============================================================================
-# rlm_core Integration (Phase 6 Migration)
-# ============================================================================
 
-# Conditional import of rlm_core bindings
-_rlm_core = None
-if USE_RLM_CORE:
-    try:
-        import rlm_core as _rlm_core
-    except ImportError:
-        import warnings
-
-        warnings.warn(
-            "RLM_USE_CORE=true but rlm_core not installed. "
-            "Falling back to Python implementation."
-        )
-        _rlm_core = None
-
-
-def _rlm_core_available() -> bool:
-    """Check if rlm_core is available."""
-    return _rlm_core is not None
-
-
-def quick_hallucination_score(text: str) -> float | None:
+def quick_hallucination_score(text: str) -> float:
     """
     Quick hallucination risk score using rlm_core.
 
-    Returns a float between 0.0 and 1.0 indicating hallucination risk,
-    or None if rlm_core is not available.
+    Returns a float between 0.0 and 1.0 indicating hallucination risk.
 
     Args:
         text: Text to check for hallucination risk
 
     Returns:
-        Risk score (0.0 = low risk, 1.0 = high risk) or None
+        Risk score (0.0 = low risk, 1.0 = high risk)
     """
-    if _rlm_core is None:
-        return None
-    try:
-        return _rlm_core.quick_hallucination_check(text)
-    except Exception:
-        return None
+    return rlm_core.quick_hallucination_check(text)
 
 
 def _map_core_category_to_metadata(category: Any) -> dict[str, str]:
     """Map rlm_core.ClaimCategory to metadata dict."""
-    if _rlm_core is None:
-        return {}
-
     # Convert category to string for comparison (enum may not be hashable)
     category_str = str(category)
 
@@ -161,7 +129,7 @@ class ExtractionResult:
 def quick_extract_claims(
     text: str,
     response_id: str | None = None,
-) -> ExtractionResult | None:
+) -> ExtractionResult:
     """
     Fast pattern-based claim extraction using rlm_core.
 
@@ -174,40 +142,33 @@ def quick_extract_claims(
         response_id: Optional ID for the response
 
     Returns:
-        ExtractionResult with extracted claims, or None if rlm_core unavailable
+        ExtractionResult with extracted claims
     """
-    if _rlm_core is None:
-        return None
-
     response_id = response_id or str(uuid.uuid4())[:8]
 
-    try:
-        extractor = _rlm_core.ClaimExtractor()
-        core_claims = extractor.extract(text)
+    extractor = rlm_core.ClaimExtractor()
+    core_claims = extractor.extract(text)
 
-        claims = []
-        for i, cc in enumerate(core_claims):
-            claims.append(
-                ExtractedClaim(
-                    claim_id=cc.id if hasattr(cc, "id") else f"{response_id}-c{i}",
-                    claim_text=cc.text,
-                    original_span=cc.text,  # Core doesn't track original span
-                    evidence_ids=[],  # Core doesn't track evidence refs
-                    confidence=cc.specificity if hasattr(cc, "specificity") else 0.8,
-                    is_critical=False,  # Core doesn't determine criticality
-                    metadata=_map_core_category_to_metadata(cc.category),
-                )
+    claims = []
+    for i, cc in enumerate(core_claims):
+        claims.append(
+            ExtractedClaim(
+                claim_id=cc.id if hasattr(cc, "id") else f"{response_id}-c{i}",
+                claim_text=cc.text,
+                original_span=cc.text,
+                evidence_ids=[],
+                confidence=cc.specificity if hasattr(cc, "specificity") else 0.8,
+                is_critical=False,
+                metadata=_map_core_category_to_metadata(cc.category),
             )
-
-        return ExtractionResult(
-            claims=claims,
-            response_id=response_id,
-            total_spans=len(claims),
-            extraction_model="rlm_core",
         )
 
-    except Exception:
-        return None
+    return ExtractionResult(
+        claims=claims,
+        response_id=response_id,
+        total_spans=len(claims),
+        extraction_model="rlm_core",
+    )
 
 
 # Prompts for claim extraction
@@ -316,15 +277,15 @@ class ClaimExtractor:
         self.max_claims = max_claims
 
     @property
-    def uses_rlm_core(self) -> bool:
+    def usesrlm_core(self) -> bool:
         """Return True if rlm_core is available for quick extraction."""
-        return _rlm_core_available()
+        return True
 
     def quick_extract(
         self,
         text: str,
         response_id: str | None = None,
-    ) -> ExtractionResult | None:
+    ) -> ExtractionResult:
         """
         Fast pattern-based extraction using rlm_core.
 
@@ -336,7 +297,7 @@ class ClaimExtractor:
             response_id: Optional ID for the response
 
         Returns:
-            ExtractionResult or None if rlm_core unavailable
+            ExtractionResult with extracted claims
         """
         return quick_extract_claims(text, response_id)
 

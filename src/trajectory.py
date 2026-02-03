@@ -12,25 +12,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
-from .config import USE_RLM_CORE
-
-# ============================================================================
-# rlm_core Integration (Phase 4 Migration)
-# ============================================================================
-
-# Conditional import of rlm_core bindings
-_rlm_core = None
-if USE_RLM_CORE:
-    try:
-        import rlm_core as _rlm_core
-    except ImportError:
-        import warnings
-
-        warnings.warn(
-            "RLM_USE_CORE=true but rlm_core not installed. "
-            "Falling back to Python implementation."
-        )
-        _rlm_core = None
+import rlm_core
 
 # ============================================================================
 # Typed Payload Schemas (SPEC-12.08)
@@ -219,9 +201,7 @@ class TrajectoryEvent:
     Example:
         >>> from src.trajectory import TrajectoryEvent, TrajectoryEventType
         >>> event = TrajectoryEvent(
-        ...     type=TrajectoryEventType.RLM_START,
-        ...     depth=0,
-        ...     content="Starting RLM analysis"
+        ...     type=TrajectoryEventType.RLM_START, depth=0, content="Starting RLM analysis"
         ... )
         >>> # With typed payload:
         >>> from src.trajectory import REPLExecPayload
@@ -230,9 +210,8 @@ class TrajectoryEvent:
         ...     depth=1,
         ...     content="x = search(files, 'error')",
         ...     typed_payload=REPLExecPayload(
-        ...         code="x = search(files, 'error')",
-        ...         function_calls=["search"]
-        ...     )
+        ...         code="x = search(files, 'error')", function_calls=["search"]
+        ...     ),
         ... )
     """
 
@@ -267,47 +246,41 @@ class TrajectoryEvent:
 
 def _map_event_type_to_core(event_type: TrajectoryEventType) -> Any:
     """Map Python TrajectoryEventType to rlm_core.TrajectoryEventType."""
-    if _rlm_core is None:
-        raise RuntimeError("rlm_core not available")
-
     mapping = {
-        TrajectoryEventType.RLM_START: _rlm_core.TrajectoryEventType.RlmStart,
-        TrajectoryEventType.ANALYZE: _rlm_core.TrajectoryEventType.Analyze,
-        TrajectoryEventType.REPL_EXEC: _rlm_core.TrajectoryEventType.ReplExec,
-        TrajectoryEventType.REPL_RESULT: _rlm_core.TrajectoryEventType.ReplResult,
-        TrajectoryEventType.REASON: _rlm_core.TrajectoryEventType.Reason,
-        TrajectoryEventType.RECURSE_START: _rlm_core.TrajectoryEventType.RecurseStart,
-        TrajectoryEventType.RECURSE_END: _rlm_core.TrajectoryEventType.RecurseEnd,
-        TrajectoryEventType.FINAL: _rlm_core.TrajectoryEventType.Final,
-        TrajectoryEventType.ERROR: _rlm_core.TrajectoryEventType.Error,
-        TrajectoryEventType.TOOL_USE: _rlm_core.TrajectoryEventType.ToolUse,
-        TrajectoryEventType.COST_REPORT: _rlm_core.TrajectoryEventType.CostReport,
-        TrajectoryEventType.BUDGET_ALERT: _rlm_core.TrajectoryEventType.BudgetComputed,
-        TrajectoryEventType.VERIFICATION: _rlm_core.TrajectoryEventType.VerifyComplete,
+        TrajectoryEventType.RLM_START: rlm_core.TrajectoryEventType.RlmStart,
+        TrajectoryEventType.ANALYZE: rlm_core.TrajectoryEventType.Analyze,
+        TrajectoryEventType.REPL_EXEC: rlm_core.TrajectoryEventType.ReplExec,
+        TrajectoryEventType.REPL_RESULT: rlm_core.TrajectoryEventType.ReplResult,
+        TrajectoryEventType.REASON: rlm_core.TrajectoryEventType.Reason,
+        TrajectoryEventType.RECURSE_START: rlm_core.TrajectoryEventType.RecurseStart,
+        TrajectoryEventType.RECURSE_END: rlm_core.TrajectoryEventType.RecurseEnd,
+        TrajectoryEventType.FINAL: rlm_core.TrajectoryEventType.Final,
+        TrajectoryEventType.ERROR: rlm_core.TrajectoryEventType.Error,
+        TrajectoryEventType.TOOL_USE: rlm_core.TrajectoryEventType.ToolUse,
+        TrajectoryEventType.COST_REPORT: rlm_core.TrajectoryEventType.CostReport,
+        TrajectoryEventType.BUDGET_ALERT: rlm_core.TrajectoryEventType.BudgetComputed,
+        TrajectoryEventType.VERIFICATION: rlm_core.TrajectoryEventType.VerifyComplete,
     }
-    return mapping.get(event_type, _rlm_core.TrajectoryEventType.Analyze)
+    return mapping.get(event_type, rlm_core.TrajectoryEventType.Analyze)
 
 
 def _map_core_event_type_to_python(core_type: Any) -> TrajectoryEventType:
     """Map rlm_core.TrajectoryEventType to Python TrajectoryEventType."""
-    if _rlm_core is None:
-        raise RuntimeError("rlm_core not available")
-
     # Build reverse mapping
     mapping = {
-        _rlm_core.TrajectoryEventType.RlmStart: TrajectoryEventType.RLM_START,
-        _rlm_core.TrajectoryEventType.Analyze: TrajectoryEventType.ANALYZE,
-        _rlm_core.TrajectoryEventType.ReplExec: TrajectoryEventType.REPL_EXEC,
-        _rlm_core.TrajectoryEventType.ReplResult: TrajectoryEventType.REPL_RESULT,
-        _rlm_core.TrajectoryEventType.Reason: TrajectoryEventType.REASON,
-        _rlm_core.TrajectoryEventType.RecurseStart: TrajectoryEventType.RECURSE_START,
-        _rlm_core.TrajectoryEventType.RecurseEnd: TrajectoryEventType.RECURSE_END,
-        _rlm_core.TrajectoryEventType.Final: TrajectoryEventType.FINAL,
-        _rlm_core.TrajectoryEventType.Error: TrajectoryEventType.ERROR,
-        _rlm_core.TrajectoryEventType.ToolUse: TrajectoryEventType.TOOL_USE,
-        _rlm_core.TrajectoryEventType.CostReport: TrajectoryEventType.COST_REPORT,
-        _rlm_core.TrajectoryEventType.BudgetComputed: TrajectoryEventType.BUDGET_ALERT,
-        _rlm_core.TrajectoryEventType.VerifyComplete: TrajectoryEventType.VERIFICATION,
+        rlm_core.TrajectoryEventType.RlmStart: TrajectoryEventType.RLM_START,
+        rlm_core.TrajectoryEventType.Analyze: TrajectoryEventType.ANALYZE,
+        rlm_core.TrajectoryEventType.ReplExec: TrajectoryEventType.REPL_EXEC,
+        rlm_core.TrajectoryEventType.ReplResult: TrajectoryEventType.REPL_RESULT,
+        rlm_core.TrajectoryEventType.Reason: TrajectoryEventType.REASON,
+        rlm_core.TrajectoryEventType.RecurseStart: TrajectoryEventType.RECURSE_START,
+        rlm_core.TrajectoryEventType.RecurseEnd: TrajectoryEventType.RECURSE_END,
+        rlm_core.TrajectoryEventType.Final: TrajectoryEventType.FINAL,
+        rlm_core.TrajectoryEventType.Error: TrajectoryEventType.ERROR,
+        rlm_core.TrajectoryEventType.ToolUse: TrajectoryEventType.TOOL_USE,
+        rlm_core.TrajectoryEventType.CostReport: TrajectoryEventType.COST_REPORT,
+        rlm_core.TrajectoryEventType.BudgetComputed: TrajectoryEventType.BUDGET_ALERT,
+        rlm_core.TrajectoryEventType.VerifyComplete: TrajectoryEventType.VERIFICATION,
     }
     return mapping.get(core_type, TrajectoryEventType.ANALYZE)
 
@@ -323,34 +296,31 @@ def _create_core_event(
 
     Returns the core event or None if creation fails.
     """
-    if _rlm_core is None:
-        return None
-
     try:
         # Use factory methods based on event type
         core_event: Any = None
 
         if event_type == TrajectoryEventType.RLM_START:
-            core_event = _rlm_core.TrajectoryEvent.rlm_start(content)
+            core_event = rlm_core.TrajectoryEvent.rlm_start(content)
         elif event_type == TrajectoryEventType.RECURSE_START:
-            core_event = _rlm_core.TrajectoryEvent.recurse_start(depth, content)
+            core_event = rlm_core.TrajectoryEvent.recurse_start(depth, content)
         elif event_type == TrajectoryEventType.RECURSE_END:
-            core_event = _rlm_core.TrajectoryEvent.recurse_end(depth, content)
+            core_event = rlm_core.TrajectoryEvent.recurse_end(depth, content)
         elif event_type == TrajectoryEventType.REPL_EXEC:
-            core_event = _rlm_core.TrajectoryEvent.repl_exec(depth, content)
+            core_event = rlm_core.TrajectoryEvent.repl_exec(depth, content)
         elif event_type == TrajectoryEventType.REPL_RESULT:
-            core_event = _rlm_core.TrajectoryEvent.repl_result(depth, content)
+            core_event = rlm_core.TrajectoryEvent.repl_result(depth, content)
         elif event_type == TrajectoryEventType.ANALYZE:
-            core_event = _rlm_core.TrajectoryEvent.analyze(content, depth=depth)
+            core_event = rlm_core.TrajectoryEvent.analyze(content, depth=depth)
         elif event_type == TrajectoryEventType.REASON:
-            core_event = _rlm_core.TrajectoryEvent.reason(depth, content)
+            core_event = rlm_core.TrajectoryEvent.reason(depth, content)
         elif event_type == TrajectoryEventType.ERROR:
-            core_event = _rlm_core.TrajectoryEvent.error(depth, content)
+            core_event = rlm_core.TrajectoryEvent.error(depth, content)
         elif event_type == TrajectoryEventType.FINAL:
-            core_event = _rlm_core.TrajectoryEvent.final_answer(content, depth=depth)
+            core_event = rlm_core.TrajectoryEvent.final_answer(content, depth=depth)
         else:
             # For event types without factory methods, use analyze as fallback
-            core_event = _rlm_core.TrajectoryEvent.analyze(content, depth=depth)
+            core_event = rlm_core.TrajectoryEvent.analyze(content, depth=depth)
 
         # Add metadata if provided
         if core_event is not None and metadata:
@@ -496,7 +466,12 @@ class RichTrajectoryRenderer:
         from src.rich_output import OutputConfig, RLMConsole
 
         # Map old verbosity to new
-        verbosity_map = {"minimal": "quiet", "normal": "normal", "verbose": "verbose", "debug": "debug"}
+        verbosity_map = {
+            "minimal": "quiet",
+            "normal": "normal",
+            "verbose": "verbose",
+            "debug": "debug",
+        }
         mapped_verbosity = verbosity_map.get(verbosity, "normal")
 
         config = OutputConfig(verbosity=mapped_verbosity, colors=colors)  # type: ignore[arg-type]
@@ -666,9 +641,9 @@ class TrajectoryStream:
         self._core_events: list[Any] = []
 
     @property
-    def uses_rlm_core(self) -> bool:
+    def usesrlm_core(self) -> bool:
         """Return True if rlm_core is being used for trajectory tracking."""
-        return _rlm_core is not None
+        return True
 
     @property
     def events(self) -> list[TrajectoryEvent]:
@@ -1012,16 +987,15 @@ class TrajectoryStream:
         # Just append to events list directly for sync contexts
         self.streaming_trajectory.events.append(event)
 
-        # Also create and track core event when rlm_core is available
-        if _rlm_core is not None:
-            core_event = _create_core_event(
-                event.type,
-                event.depth,
-                event.content,
-                event.metadata,
-            )
-            if core_event is not None:
-                self._core_events.append(core_event)
+        # Also create and track core event
+        core_event = _create_core_event(
+            event.type,
+            event.depth,
+            event.content,
+            event.metadata,
+        )
+        if core_event is not None:
+            self._core_events.append(core_event)
 
     def get_full_trajectory(self) -> list[TrajectoryEvent]:
         """Get complete trajectory."""
@@ -1046,7 +1020,7 @@ class TrajectoryStream:
         Returns None if rlm_core is not available.
         Uses the core TrajectoryEvent.to_json() for each event.
         """
-        if _rlm_core is None or not self._core_events:
+        if not self._core_events:
             return None
 
         events_json = [event.to_json() for event in self._core_events]

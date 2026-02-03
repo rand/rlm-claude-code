@@ -13,14 +13,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Check if rlm_core is available (affects which features work)
-try:
-    import rlm_core
-    HAS_RLM_CORE = True
-except ImportError:
-    HAS_RLM_CORE = False
-
-
 
 # =============================================================================
 # Fixtures
@@ -48,7 +40,6 @@ def temp_db_path():
 
 class TestMemorySystemIntegration:
     """Integration tests for the complete memory system."""
-
 
     def test_memory_store_to_evolution_flow(self, temp_db_path):
         """
@@ -113,7 +104,6 @@ class TestMemorySystemIntegration:
         assert node1.tier == "longterm"
         assert node2.tier == "longterm"
 
-
     def test_memory_with_reasoning_traces(self, temp_db_path):
         """
         Test memory system integration with reasoning traces.
@@ -151,7 +141,9 @@ class TestMemorySystemIntegration:
         action_id = traces.create_action(decision_id, "Implementing JWT authentication")
 
         # Create outcome
-        outcome_id = traces.create_outcome(action_id, "JWT authentication implemented", success=True)
+        outcome_id = traces.create_outcome(
+            action_id, "JWT authentication implemented", success=True
+        )
 
         # Verify the decision tree
         tree = traces.get_decision_tree(goal_id)
@@ -162,7 +154,6 @@ class TestMemorySystemIntegration:
         rejected = traces.get_rejected_options(decision_id)
         assert len(rejected) == 1
         assert rejected[0].reason == "JWT is more scalable for API"
-
 
     def test_budget_tracking_with_memory(self, temp_db_path):
         """
@@ -216,7 +207,6 @@ class TestMemorySystemIntegration:
 
         tracker.end_task()
 
-
     def test_repl_with_memory_functions(self, temp_db_path):
         """
         Test REPL environment with memory functions enabled.
@@ -239,7 +229,9 @@ class TestMemorySystemIntegration:
 
         # Test memory functions through REPL
         # Add a fact - we store the result in a variable to capture the return value
-        result = env.execute("fact_id = memory_add_fact('Python uses indentation for blocks', confidence=0.95)")
+        result = env.execute(
+            "fact_id = memory_add_fact('Python uses indentation for blocks', confidence=0.95)"
+        )
         assert result.success
 
         # Query the fact - should find it
@@ -251,7 +243,9 @@ class TestMemorySystemIntegration:
         assert result.success
 
         # Add related experience (requires content, outcome, success)
-        result = env.execute("memory_add_experience('Learned about Python indentation rules', 'Successfully applied indentation', True)")
+        result = env.execute(
+            "memory_add_experience('Learned about Python indentation rules', 'Successfully applied indentation', True)"
+        )
         assert result.success
 
         # Get context (takes an optional limit parameter, not a query string)
@@ -261,7 +255,6 @@ class TestMemorySystemIntegration:
 
 class TestFullSystemIntegration:
     """Full system integration tests."""
-
 
     def test_complete_workflow(self, temp_db_path):
         """

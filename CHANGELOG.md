@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0] - 2026-02-02
+
+### Changed
+- **rlm-core is now a required bundled dependency** — no more optional/fallback mode
+- `USE_RLM_CORE` / `RLM_USE_CORE` environment variable removed (always enabled)
+- `use_rlm_core` config option removed from `rlm-config.json`
+- Memory store delegates node CRUD to rlm_core's Rust SQLite backend
+- Build system uses maturin for rlm-core PyO3 bindings
+- rlm-core vendored as git submodule at `vendor/loop`
+
+### Added
+- `id` parameter on `rlm_core.Node()` constructor for creating nodes with pre-existing UUIDs
+- `update_fields()` method on `rlm_core.MemoryStore` for field-level updates without Node immutability issues
+
+### Fixed
+- Node immutability crash (`updated.id = node_id`) by using `update_fields()` convenience method
+- Foreign key constraint failures when Python SQLite and rlm_core share the same database file
+- In-memory store connection lifecycle (persistent connection for `:memory:` mode)
+- Evolution log schema compatibility with rlm_core's `node_id`/`reason` column names
+- Provenance round-trip fidelity via metadata storage
+
 ## [0.6.1] - 2026-02-02
 
 ### Fixed
@@ -27,7 +48,7 @@
 - Unit tests for hookio, events, and config packages
 
 ### Changed
-- **rlm-core enabled by default** (`USE_RLM_CORE=true`) — set `RLM_USE_CORE=false` to disable
+- **rlm-core enabled by default** — now a required dependency as of v0.7.0
 - rlm-core PyO3 bindings now support metadata, provenance, and embedding parameters
 - rlm-core uses separate `-core.db` file to avoid schema conflicts with Python SQLite
 - hooks.json now uses Go binaries + prompt-based hooks

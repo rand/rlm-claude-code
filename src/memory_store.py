@@ -3,34 +3,21 @@ Persistent hypergraph memory with SQLite storage.
 
 Implements: Spec SPEC-02 Memory Foundation
 
-Migration: When USE_RLM_CORE=true, delegates to rlm_core.MemoryStore
+Uses rlm_core.MemoryStore as the primary storage backend.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import uuid
-from dataclasses import dataclass, field
-from pathlib import Path
 from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC
+from pathlib import Path
 from typing import Any
 
-from .config import USE_RLM_CORE
-
-# Conditional import of rlm_core bindings
-_rlm_core = None
-if USE_RLM_CORE:
-    try:
-        import rlm_core as _rlm_core
-    except ImportError:
-        import warnings
-        warnings.warn(
-            "RLM_USE_CORE=true but rlm_core not installed. "
-            "Falling back to Python implementation."
-        )
-        _rlm_core = None
+import rlm_core
 
 # =============================================================================
 # Data Classes
@@ -127,101 +114,22 @@ class SearchResult:
 # Schema Definition
 # =============================================================================
 
-SCHEMA_SQL = """
--- Nodes table
-CREATE TABLE IF NOT EXISTS nodes (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL CHECK(type IN ('entity', 'fact', 'experience', 'decision', 'snippet')),
-    subtype TEXT,
-    content TEXT NOT NULL,
-    embedding BLOB,
-    tier TEXT DEFAULT 'task' CHECK(tier IN ('task', 'session', 'longterm', 'archive')),
-    confidence REAL DEFAULT 0.5 CHECK(confidence >= 0.0 AND confidence <= 1.0),
-    provenance TEXT,
-    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-    last_accessed INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-    access_count INTEGER DEFAULT 0,
-    metadata JSON DEFAULT '{}'
-);
-
--- Hyperedges table
-CREATE TABLE IF NOT EXISTS hyperedges (
-    id TEXT PRIMARY KEY,
-    edge_type TEXT NOT NULL CHECK(edge_type IN ('relation', 'composition', 'causation', 'context')),
-    label TEXT,
-    weight REAL DEFAULT 1.0 CHECK(weight >= 0.0)
-);
-
--- Membership table (many-to-many)
-CREATE TABLE IF NOT EXISTS membership (
-    hyperedge_id TEXT NOT NULL REFERENCES hyperedges(id) ON DELETE CASCADE,
-    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    role TEXT NOT NULL,
-    position INTEGER DEFAULT 0,
-    PRIMARY KEY (hyperedge_id, node_id, role)
-);
-
--- Evolution log table
-CREATE TABLE IF NOT EXISTS evolution_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-    operation TEXT NOT NULL,
-    node_ids JSON NOT NULL,
-    from_tier TEXT,
-    to_tier TEXT,
-    reasoning TEXT
-);
-
--- Confidence updates audit table (Phase 3: Memory Integration)
-CREATE TABLE IF NOT EXISTS confidence_updates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    old_confidence REAL NOT NULL,
-    new_confidence REAL NOT NULL,
-    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('outcome', 'decay', 'consolidation', 'manual')),
-    trigger_id TEXT,
-    timestamp INTEGER DEFAULT (strftime('%s', 'now') * 1000)
-);
-
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_nodes_tier ON nodes(tier);
-CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
-CREATE INDEX IF NOT EXISTS idx_nodes_confidence ON nodes(confidence);
-CREATE INDEX IF NOT EXISTS idx_nodes_last_accessed ON nodes(last_accessed);
-CREATE INDEX IF NOT EXISTS idx_membership_node ON membership(node_id);
-CREATE INDEX IF NOT EXISTS idx_membership_edge ON membership(hyperedge_id);
-CREATE INDEX IF NOT EXISTS idx_confidence_updates_node ON confidence_updates(node_id);
-CREATE INDEX IF NOT EXISTS idx_confidence_updates_trigger ON confidence_updates(trigger_type);
-
--- FTS5 full-text search index (Phase 4: Massive Context)
--- Uses Porter stemming for better matching and BM25 ranking
-CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
-    node_id UNINDEXED,
-    content,
-    type UNINDEXED,
-    tokenize='porter'
-);
-
--- Triggers to keep FTS index in sync with nodes table
-CREATE TRIGGER IF NOT EXISTS nodes_fts_insert AFTER INSERT ON nodes BEGIN
-    INSERT INTO content_fts(node_id, content, type) VALUES (NEW.id, NEW.content, NEW.type);
-END;
-
-CREATE TRIGGER IF NOT EXISTS nodes_fts_update AFTER UPDATE OF content ON nodes BEGIN
-    DELETE FROM content_fts WHERE node_id = OLD.id;
-    INSERT INTO content_fts(node_id, content, type) VALUES (NEW.id, NEW.content, NEW.type);
-END;
-
-CREATE TRIGGER IF NOT EXISTS nodes_fts_delete AFTER DELETE ON nodes BEGIN
-    DELETE FROM content_fts WHERE node_id = OLD.id;
-END;
-"""
-
-
 # =============================================================================
 # MemoryStore Class
 # =============================================================================
+
+
+class _NoCloseConnection:
+    """Wrapper around sqlite3.Connection that makes close() a no-op."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def close(self) -> None:
+        pass  # Don't actually close the persistent connection
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
 
 
 class MemoryStore:
@@ -236,8 +144,8 @@ class MemoryStore:
     - Hyperedge support for many-to-many relationships
     - Evolution logging for tier transitions
 
-    Migration: When USE_RLM_CORE=true, delegates core operations to rlm_core.MemoryStore
-    while maintaining API compatibility.
+    Delegates core node operations to rlm_core.MemoryStore while maintaining
+    API compatibility for auxiliary features (hyperedges, evolution logging).
     """
 
     # Valid node types (SPEC-02.05)
@@ -292,26 +200,27 @@ class MemoryStore:
             db_path = os.environ.get("RLM_MEMORY_DB") or self._get_default_db_path()
 
         self.db_path = db_path
+        self._is_memory = db_path == ":memory:"
+        self._persistent_conn: sqlite3.Connection | None = None
 
-        # rlm_core backend uses a separate database to avoid schema conflicts
-        self._core_store: Any = None
-        if _rlm_core is not None:
-            try:
-                core_db = db_path.replace(".db", "-core.db") if db_path != ":memory:" else ":memory:"
-                self._core_store = _rlm_core.MemoryStore.open(core_db)
-            except Exception as e:
-                import warnings
-                warnings.warn(f"Failed to initialize rlm_core.MemoryStore: {e}")
-                self._core_store = None
-
-        # Python SQLite is always the primary store for full API compatibility
-        self._ensure_directory()
+        # Python SQLite for auxiliary tables (hyperedges, confidence_updates)
+        # Must be created BEFORE rlm_core.open() — opening multiple Python
+        # connections after rlm_core corrupts its schema cache.
+        if not self._is_memory:
+            self._ensure_directory()
         self._init_database()
+
+        # rlm_core is the primary backend for node CRUD
+        # Opens after Python auxiliary tables so schema changes don't conflict.
+        if self._is_memory:
+            self._core_store = rlm_core.MemoryStore.in_memory()
+        else:
+            self._core_store = rlm_core.MemoryStore.open(db_path)
 
     @property
     def uses_rlm_core(self) -> bool:
         """Return True if using rlm_core backend."""
-        return self._core_store is not None
+        return True
 
     def _get_default_db_path(self) -> str:
         """
@@ -328,21 +237,98 @@ class MemoryStore:
 
     def _init_database(self) -> None:
         """
-        Initialize database with schema.
+        Initialize auxiliary tables (hyperedges, evolution_log, confidence_updates).
 
-        Implements: Spec SPEC-02.04 (WAL mode)
+        Node CRUD is handled by rlm_core.MemoryStore.
         """
-        conn = sqlite3.connect(self.db_path)
-        try:
-            # Enable WAL mode for concurrent access
-            conn.execute("PRAGMA journal_mode=WAL")
-            # Enable foreign keys
-            conn.execute("PRAGMA foreign_keys=ON")
-            # Create schema
-            conn.executescript(SCHEMA_SQL)
-            conn.commit()
-        finally:
-            conn.close()
+        if self._is_memory:
+            conn = sqlite3.connect(":memory:")
+        else:
+            conn = sqlite3.connect(self.db_path)
+        # Keep a persistent connection for all stores to avoid opening
+        # multiple connections that corrupt rlm_core's WAL state.
+        self._persistent_conn = conn
+        conn.execute("PRAGMA journal_mode=WAL")
+        # FK enforcement disabled: rlm_core manages nodes via its own Rust connection,
+        # so membership.node_id FK against nodes(id) can't be validated here.
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.executescript("""
+            -- Hyperedges table
+            CREATE TABLE IF NOT EXISTS hyperedges (
+                id TEXT PRIMARY KEY,
+                edge_type TEXT NOT NULL CHECK(edge_type IN ('relation', 'composition', 'causation', 'context')),
+                label TEXT,
+                weight REAL DEFAULT 1.0 CHECK(weight >= 0.0)
+            );
+
+            -- Membership table (many-to-many)
+            CREATE TABLE IF NOT EXISTS membership (
+                hyperedge_id TEXT NOT NULL REFERENCES hyperedges(id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                position INTEGER DEFAULT 0,
+                PRIMARY KEY (hyperedge_id, node_id, role)
+            );
+
+            -- evolution_log is created by rlm_core (node_id, operation, from_tier, to_tier, reason, created_at)
+
+            -- Confidence updates audit table
+            CREATE TABLE IF NOT EXISTS confidence_updates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node_id TEXT NOT NULL,
+                old_confidence REAL NOT NULL,
+                new_confidence REAL NOT NULL,
+                trigger_type TEXT NOT NULL CHECK(trigger_type IN ('outcome', 'decay', 'consolidation', 'manual')),
+                trigger_id TEXT,
+                timestamp INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+            );
+
+            -- Decisions extension table (used by ReasoningTraces)
+            -- Created here so all schema init happens before rlm_core.open()
+            CREATE TABLE IF NOT EXISTS decisions (
+                node_id TEXT PRIMARY KEY,
+                decision_type TEXT NOT NULL CHECK(decision_type IN
+                    ('goal', 'decision', 'option', 'action', 'outcome', 'observation', 'claim', 'verification')),
+                confidence REAL DEFAULT 0.5,
+                prompt TEXT,
+                files JSON DEFAULT '[]',
+                branch TEXT,
+                commit_hash TEXT,
+                parent_id TEXT,
+                claim_text TEXT,
+                evidence_ids JSON DEFAULT '[]',
+                verification_status TEXT CHECK(verification_status IS NULL OR verification_status IN
+                    ('pending', 'verified', 'flagged', 'refuted')),
+                verified_claim_id TEXT,
+                support_score REAL CHECK(support_score IS NULL OR (support_score >= 0.0 AND support_score <= 1.0)),
+                dependence_score REAL CHECK(dependence_score IS NULL OR (dependence_score >= 0.0 AND dependence_score <= 1.0)),
+                consistency_score REAL CHECK(consistency_score IS NULL OR (consistency_score >= 0.0 AND consistency_score <= 1.0)),
+                is_flagged INTEGER DEFAULT 0,
+                flag_reason TEXT CHECK(flag_reason IS NULL OR flag_reason IN
+                    ('unsupported', 'phantom_citation', 'low_dependence', 'contradiction', 'over_extrapolation', 'confidence_mismatch'))
+            );
+
+            -- Indexes
+            CREATE INDEX IF NOT EXISTS idx_membership_node ON membership(node_id);
+            CREATE INDEX IF NOT EXISTS idx_membership_edge ON membership(hyperedge_id);
+            CREATE INDEX IF NOT EXISTS idx_confidence_updates_node ON confidence_updates(node_id);
+            CREATE INDEX IF NOT EXISTS idx_confidence_updates_trigger ON confidence_updates(trigger_type);
+            CREATE INDEX IF NOT EXISTS idx_decisions_type ON decisions(decision_type);
+            CREATE INDEX IF NOT EXISTS idx_decisions_parent ON decisions(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_decisions_commit ON decisions(commit_hash);
+        """)
+        conn.commit()
+        # These indexes depend on columns that may not exist in old DBs
+        # (added by migration). Create them best-effort.
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_decisions_verification ON decisions(verification_status)",
+            "CREATE INDEX IF NOT EXISTS idx_decisions_verified_claim ON decisions(verified_claim_id)",
+        ]:
+            try:
+                conn.execute(idx_sql)
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
 
     def _init_auxiliary_tables(self) -> None:
         """Initialize Python-specific tables when rlm_core manages core node/edge schema."""
@@ -397,9 +383,15 @@ class MemoryStore:
             conn.close()
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with proper settings."""
+        """Get a database connection with proper settings.
+
+        Returns a non-closeable wrapper around a persistent connection
+        to avoid opening multiple connections that corrupt rlm_core's WAL state.
+        """
+        if self._persistent_conn is not None:
+            self._persistent_conn.row_factory = sqlite3.Row
+            return _NoCloseConnection(self._persistent_conn)
         conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA foreign_keys=ON")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -409,28 +401,24 @@ class MemoryStore:
 
     def _map_node_type_to_core(self, node_type: str) -> Any:
         """Map Python node type string to rlm_core.NodeType enum."""
-        if _rlm_core is None:
-            raise RuntimeError("rlm_core not available")
         mapping = {
-            "entity": _rlm_core.NodeType.Entity,
-            "fact": _rlm_core.NodeType.Fact,
-            "experience": _rlm_core.NodeType.Experience,
-            "decision": _rlm_core.NodeType.Decision,
-            "snippet": _rlm_core.NodeType.Snippet,
+            "entity": rlm_core.NodeType.Entity,
+            "fact": rlm_core.NodeType.Fact,
+            "experience": rlm_core.NodeType.Experience,
+            "decision": rlm_core.NodeType.Decision,
+            "snippet": rlm_core.NodeType.Snippet,
         }
-        return mapping.get(node_type, _rlm_core.NodeType.Fact)
+        return mapping.get(node_type, rlm_core.NodeType.Fact)
 
     def _map_tier_to_core(self, tier: str) -> Any:
         """Map Python tier string to rlm_core.Tier enum."""
-        if _rlm_core is None:
-            raise RuntimeError("rlm_core not available")
         mapping = {
-            "task": _rlm_core.Tier.Task,
-            "session": _rlm_core.Tier.Session,
-            "longterm": _rlm_core.Tier.LongTerm,
-            "archive": _rlm_core.Tier.Archive,
+            "task": rlm_core.Tier.Task,
+            "session": rlm_core.Tier.Session,
+            "longterm": rlm_core.Tier.LongTerm,
+            "archive": rlm_core.Tier.Archive,
         }
-        return mapping.get(tier, _rlm_core.Tier.Task)
+        return mapping.get(tier, rlm_core.Tier.Task)
 
     def _map_core_node_type_to_str(self, node_type: Any) -> str:
         """Map rlm_core.NodeType enum to Python string."""
@@ -442,8 +430,23 @@ class MemoryStore:
         name = str(tier).split(".")[-1].lower()
         return name if name in self.VALID_TIERS else "task"
 
-    def _core_node_to_python(self, node: Any) -> "Node":
+    @staticmethod
+    def _rfc3339_to_epoch_ms(rfc3339_str: str) -> int:
+        """Convert RFC3339 timestamp string to epoch milliseconds."""
+        from datetime import datetime
+
+        try:
+            # Handle various RFC3339 formats
+            dt = datetime.fromisoformat(rfc3339_str.replace("Z", "+00:00"))
+            return int(dt.timestamp() * 1000)
+        except (ValueError, AttributeError):
+            return 0
+
+    def _core_node_to_python(self, node: Any) -> Node:
         """Convert rlm_core.Node to Python Node dataclass."""
+        meta = node.metadata or {}
+        # Retrieve original provenance string from metadata if stored there
+        provenance = meta.pop("_provenance", None) or node.provenance_source
         return Node(
             id=node.id,
             type=self._map_core_node_type_to_str(node.node_type),
@@ -452,12 +455,12 @@ class MemoryStore:
             confidence=node.confidence if node.confidence is not None else 0.5,
             subtype=node.subtype,
             embedding=None,  # Rust stores Vec<f32>, Python expects bytes
-            provenance=node.provenance_source,
-            metadata=node.metadata or {},
-            created_at=0,
-            updated_at=0,
-            last_accessed=0,
-            access_count=0,
+            provenance=provenance,
+            metadata=meta,
+            created_at=self._rfc3339_to_epoch_ms(node.created_at),
+            updated_at=self._rfc3339_to_epoch_ms(node.updated_at),
+            last_accessed=self._rfc3339_to_epoch_ms(node.last_accessed),
+            access_count=node.access_count,
         )
 
     def _create_node_core(
@@ -472,24 +475,25 @@ class MemoryStore:
         embedding: list[float] | None = None,
     ) -> str:
         """Create a node using rlm_core backend."""
-        if _rlm_core is None or self._core_store is None:
-            raise RuntimeError("rlm_core not available")
 
         kwargs: dict[str, Any] = {}
         if subtype is not None:
             kwargs["subtype"] = subtype
-        if confidence != 0.5:
-            kwargs["confidence"] = confidence
+        kwargs["confidence"] = confidence
         if metadata:
             kwargs["metadata"] = metadata
         if provenance:
-            # Map provenance string to valid source type if possible
+            # Store original provenance string in metadata for round-trip fidelity
+            if "metadata" not in kwargs or kwargs["metadata"] is None:
+                kwargs["metadata"] = {}
+            kwargs["metadata"]["_provenance"] = provenance
+            # Also set rlm_core provenance for its internal use
             kwargs["provenance_source"] = "inference"
             kwargs["provenance_ref"] = provenance
         if embedding:
             kwargs["embedding"] = embedding
 
-        node = _rlm_core.Node(
+        node = rlm_core.Node(
             node_type=self._map_node_type_to_core(node_type),
             content=content,
             tier=self._map_tier_to_core(tier),
@@ -497,19 +501,18 @@ class MemoryStore:
         )
         return self._core_store.add_node(node)
 
-    def _get_node_core(self, node_id: str) -> "Node | None":
+    def _get_node_core(self, node_id: str) -> Node | None:
         """Get a node using rlm_core backend."""
-        if self._core_store is None:
-            raise RuntimeError("rlm_core not available")
-        result = self._core_store.get_node(node_id)
+        try:
+            result = self._core_store.get_node(node_id)
+        except (ValueError, RuntimeError):
+            return None
         if result is None:
             return None
         return self._core_node_to_python(result)
 
     def _delete_node_core(self, node_id: str) -> bool:
         """Delete a node using rlm_core backend."""
-        if self._core_store is None:
-            raise RuntimeError("rlm_core not available")
         try:
             self._core_store.delete_node(node_id)
             return True
@@ -521,36 +524,32 @@ class MemoryStore:
         node_type: str | None = None,
         tier: str | None = None,
         limit: int = 100,
-    ) -> list["Node"]:
+    ) -> list[Node]:
         """Query nodes using rlm_core backend."""
-        if _rlm_core is None or self._core_store is None:
-            raise RuntimeError("rlm_core not available")
 
         if node_type is not None:
-            results = self._core_store.query_by_type(
-                self._map_node_type_to_core(node_type), limit
-            )
+            results = self._core_store.query_by_type(self._map_node_type_to_core(node_type), limit)
         elif tier is not None:
-            results = self._core_store.query_by_tier(
-                self._map_tier_to_core(tier), limit
-            )
+            results = self._core_store.query_by_tier(self._map_tier_to_core(tier), limit)
         else:
-            # No specific filter — query all by type "fact" as fallback
-            # rlm_core doesn't have a "list all" method
+            # No specific filter — query all types
             results = []
             for nt in self.VALID_NODE_TYPES:
                 results.extend(
-                    self._core_store.query_by_type(
-                        self._map_node_type_to_core(nt), limit
-                    )
+                    self._core_store.query_by_type(self._map_node_type_to_core(nt), limit)
                 )
 
-        return [self._core_node_to_python(n) for n in results]
+        nodes = [self._core_node_to_python(n) for n in results]
 
-    def _search_core(self, query: str, limit: int) -> list["SearchResult"]:
+        # Apply tier filter if both node_type and tier are specified
+        # (rlm_core query_by_type doesn't filter by tier)
+        if node_type is not None and tier is not None:
+            nodes = [n for n in nodes if n.tier == tier]
+
+        return nodes
+
+    def _search_core(self, query: str, limit: int) -> list[SearchResult]:
         """Search using rlm_core backend."""
-        if _rlm_core is None or self._core_store is None:
-            raise RuntimeError("rlm_core not available")
 
         results = self._core_store.search_content(query, limit)
         return [
@@ -636,38 +635,23 @@ class MemoryStore:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got: {confidence}")
 
-        # Python implementation
-        # Generate UUID (SPEC-02.09)
-        node_id = str(uuid.uuid4())
+        # Convert embedding bytes to float list if needed
+        embedding_list = None
+        if embedding is not None:
+            import struct
 
-        # Serialize metadata
-        metadata_json = json.dumps(metadata or {})
+            embedding_list = list(struct.unpack(f"{len(embedding) // 4}f", embedding))
 
-        conn = self._get_connection()
-        try:
-            conn.execute(
-                """
-                INSERT INTO nodes (id, type, subtype, content, embedding, tier,
-                                   confidence, provenance, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    node_id,
-                    node_type,
-                    subtype,
-                    content,
-                    embedding,
-                    tier,
-                    confidence,
-                    provenance,
-                    metadata_json,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        return node_id
+        return self._create_node_core(
+            node_type=node_type,
+            content=content,
+            tier=tier,
+            confidence=confidence,
+            subtype=subtype,
+            metadata=metadata,
+            provenance=provenance,
+            embedding=embedding_list,
+        )
 
     def get_node(self, node_id: str, include_archived: bool = False) -> Node | None:
         """
@@ -682,34 +666,21 @@ class MemoryStore:
         Returns:
             Node object or None if not found
         """
-        conn = self._get_connection()
+        node = self._get_node_core(node_id)
+        if node is None:
+            return None
+        if not include_archived and node.tier == "archive":
+            return None
+        # Track access (best-effort, don't fail reads)
         try:
-            # Update access tracking
-            conn.execute(
-                """
-                UPDATE nodes
-                SET last_accessed = strftime('%s', 'now') * 1000,
-                    access_count = access_count + 1
-                WHERE id = ?
-                """,
-                (node_id,),
+            self._core_store.update_fields(
+                node_id,
+                access_count=node.access_count + 1,
             )
-            conn.commit()
-
-            # Build query
-            query = "SELECT * FROM nodes WHERE id = ?"
-            if not include_archived:
-                query += " AND tier != 'archive'"
-
-            cursor = conn.execute(query, (node_id,))
-            row = cursor.fetchone()
-
-            if row is None:
-                return None
-
-            return self._row_to_node(row)
-        finally:
-            conn.close()
+            node.access_count += 1
+        except Exception:
+            pass
+        return node
 
     def update_node(self, node_id: str, **kwargs: Any) -> bool:
         """
@@ -739,37 +710,32 @@ class MemoryStore:
             if tier not in self.VALID_TIERS:
                 raise ValueError(f"Invalid tier: {tier}")
 
-        conn = self._get_connection()
-        try:
-            # Check if node exists and get current tier for logging
-            cursor = conn.execute("SELECT tier FROM nodes WHERE id = ?", (node_id,))
-            row = cursor.fetchone()
-            if row is None:
-                return False
+        # Get current node from rlm_core
+        current = self._core_store.get_node(node_id)
+        if current is None:
+            return False
 
-            old_tier = row["tier"]
+        old_tier = self._map_core_tier_to_str(current.tier)
 
-            # Build update query
-            updates = []
-            values = []
-            for key, value in kwargs.items():
-                if key == "metadata":
-                    updates.append(f"{key} = ?")
-                    values.append(json.dumps(value))
-                else:
-                    updates.append(f"{key} = ?")
-                    values.append(value)
+        # Use update_fields to avoid Node immutability issues
+        update_kwargs: dict[str, Any] = {}
+        if "content" in kwargs:
+            update_kwargs["content"] = kwargs["content"]
+        if "confidence" in kwargs:
+            update_kwargs["confidence"] = kwargs["confidence"]
+        if "tier" in kwargs:
+            update_kwargs["tier"] = self._map_tier_to_core(kwargs["tier"])
+        if "subtype" in kwargs:
+            update_kwargs["subtype"] = kwargs["subtype"]
+        if "metadata" in kwargs:
+            update_kwargs["metadata"] = kwargs["metadata"]
 
-            # Always update updated_at
-            updates.append("updated_at = strftime('%s', 'now') * 1000")
+        self._core_store.update_fields(node_id, **update_kwargs)
 
-            values.append(node_id)
-
-            query = f"UPDATE nodes SET {', '.join(updates)} WHERE id = ?"
-            conn.execute(query, values)
-
-            # Log tier transition if tier changed (SPEC-02.19)
-            if "tier" in kwargs and kwargs["tier"] != old_tier:
+        # Log tier transition if tier changed (SPEC-02.19)
+        if "tier" in kwargs and kwargs["tier"] != old_tier:
+            conn = self._get_connection()
+            try:
                 self._log_evolution(
                     conn,
                     operation="tier_transition",
@@ -777,11 +743,11 @@ class MemoryStore:
                     from_tier=old_tier,
                     to_tier=kwargs["tier"],
                 )
+                conn.commit()
+            finally:
+                conn.close()
 
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+        return True
 
     def delete_node(self, node_id: str) -> bool:
         """
@@ -807,13 +773,15 @@ class MemoryStore:
         Returns:
             True if deleted, False if node not found
         """
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
+        result = self._delete_node_core(node_id)
+        if result:
+            conn = self._get_connection()
+            try:
+                conn.execute("DELETE FROM membership WHERE node_id = ?", (node_id,))
+                conn.commit()
+            finally:
+                conn.close()
+        return result
 
     def query_nodes(
         self,
@@ -840,48 +808,24 @@ class MemoryStore:
         Returns:
             List of matching nodes
         """
-        conditions = []
-        values: list[Any] = []
-
-        if not include_archived:
-            conditions.append("tier != 'archive'")
-
-        if node_type is not None:
-            conditions.append("type = ?")
-            values.append(node_type)
-
-        if tier is not None:
-            conditions.append("tier = ?")
-            values.append(tier)
-
-            # Session isolation for task/session tiers only
-            # Longterm and archive tiers are shared across all sessions
-            if tier in ("task", "session") and session_id is not None:
-                conditions.append("json_extract(metadata, '$.session_id') = ?")
-                values.append(session_id)
-
-        if min_confidence is not None:
-            conditions.append("confidence >= ?")
-            values.append(min_confidence)
-
-        query = "SELECT * FROM nodes"
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-
-        # Order by confidence DESC first (most relevant), then last_accessed DESC
-        query += " ORDER BY confidence DESC, last_accessed DESC"
-
-        # Default limit to prevent context flooding
         effective_limit = limit if limit is not None else 100
-        query += " LIMIT ?"
-        values.append(effective_limit)
+        nodes = self._query_nodes_core(
+            node_type=node_type,
+            tier=tier,
+            limit=effective_limit,
+        )
 
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute(query, values)
-            return [self._row_to_node(row) for row in cursor.fetchall()]
-        finally:
-            conn.close()
+        # Apply filters that rlm_core doesn't support natively
+        if not include_archived:
+            nodes = [n for n in nodes if n.tier != "archive"]
+        if min_confidence is not None:
+            nodes = [n for n in nodes if n.confidence >= min_confidence]
+        if tier in ("task", "session") and session_id is not None:
+            nodes = [n for n in nodes if n.metadata.get("session_id") == session_id]
+
+        # Sort by confidence DESC
+        nodes.sort(key=lambda n: n.confidence, reverse=True)
+        return nodes[:effective_limit]
 
     # =========================================================================
     # Hyperedge Operations (SPEC-02.25-26)
@@ -931,7 +875,7 @@ class MemoryStore:
             ...         {"node_id": effect_id, "role": "effect"},
             ...         {"node_id": cause1_id, "role": "cause"},
             ...         {"node_id": cause2_id, "role": "cause"},
-            ...     ]
+            ...     ],
             ... )
         """
         # Validate edge type
@@ -1038,9 +982,10 @@ class MemoryStore:
             conn.close()
 
     def delete_edge(self, edge_id: str) -> bool:
-        """Delete a hyperedge."""
+        """Delete a hyperedge and its membership entries."""
         conn = self._get_connection()
         try:
+            conn.execute("DELETE FROM membership WHERE hyperedge_id = ?", (edge_id,))
             cursor = conn.execute("DELETE FROM hyperedges WHERE id = ?", (edge_id,))
             conn.commit()
             return cursor.rowcount > 0
@@ -1109,7 +1054,7 @@ class MemoryStore:
             >>> exp_id = store.add_experience(
             ...     "Tried map_reduce on large file",
             ...     outcome="Faster than sequential processing",
-            ...     success=True
+            ...     success=True,
             ... )
         """
         full_metadata = {"outcome": outcome, "success": success}
@@ -1392,30 +1337,39 @@ class MemoryStore:
         """
         conn = self._get_connection()
         try:
-            # Find all edges this node participates in
-            query = """
-                SELECT DISTINCT n.* FROM nodes n
-                JOIN membership m1 ON n.id = m1.node_id
-                JOIN membership m2 ON m1.hyperedge_id = m2.hyperedge_id
-                WHERE m2.node_id = ? AND n.id != ? AND n.tier != 'archive'
-            """
-            values: list[Any] = [node_id, node_id]
-
+            # Find related node IDs via membership table
             if edge_type is not None:
-                query = """
-                    SELECT DISTINCT n.* FROM nodes n
-                    JOIN membership m1 ON n.id = m1.node_id
+                cursor = conn.execute(
+                    """
+                    SELECT DISTINCT m1.node_id FROM membership m1
                     JOIN membership m2 ON m1.hyperedge_id = m2.hyperedge_id
                     JOIN hyperedges h ON m1.hyperedge_id = h.id
-                    WHERE m2.node_id = ? AND n.id != ? AND n.tier != 'archive'
+                    WHERE m2.node_id = ? AND m1.node_id != ?
                     AND h.edge_type = ?
-                """
-                values.append(edge_type)
+                    """,
+                    (node_id, node_id, edge_type),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT DISTINCT m1.node_id FROM membership m1
+                    JOIN membership m2 ON m1.hyperedge_id = m2.hyperedge_id
+                    WHERE m2.node_id = ? AND m1.node_id != ?
+                    """,
+                    (node_id, node_id),
+                )
 
-            cursor = conn.execute(query, values)
-            return [self._row_to_node(row) for row in cursor.fetchall()]
+            related_ids = [row[0] for row in cursor.fetchall()]
         finally:
             conn.close()
+
+        # Fetch nodes from rlm_core
+        nodes = []
+        for nid in related_ids:
+            node = self._get_node_core(nid)
+            if node is not None and node.tier != "archive":
+                nodes.append(node)
+        return nodes
 
     def query_edges(
         self,
@@ -1646,13 +1600,18 @@ class MemoryStore:
         reasoning: str | None = None,
     ) -> None:
         """Log an evolution event."""
-        conn.execute(
-            """
-            INSERT INTO evolution_log (operation, node_ids, from_tier, to_tier, reasoning)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (operation, json.dumps(node_ids), from_tier, to_tier, reasoning),
-        )
+        tier_to_int = {"task": 0, "session": 1, "longterm": 2, "archive": 3}
+        from_tier_int = tier_to_int.get(from_tier) if from_tier else None
+        to_tier_int = tier_to_int.get(to_tier) if to_tier else None
+        # rlm_core's evolution_log has single node_id, not node_ids array
+        for nid in node_ids:
+            conn.execute(
+                """
+                INSERT INTO evolution_log (node_id, operation, from_tier, to_tier, reason)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (nid, operation, from_tier_int, to_tier_int, reasoning),
+            )
 
     def get_evolution_log(
         self,
@@ -1671,12 +1630,13 @@ class MemoryStore:
         """
         conn = self._get_connection()
         try:
+            int_to_tier = {0: "task", 1: "session", 2: "longterm", 3: "archive"}
             conditions = []
             values: list[Any] = []
 
             if node_id is not None:
-                conditions.append("node_ids LIKE ?")
-                values.append(f'%"{node_id}"%')
+                conditions.append("node_id = ?")
+                values.append(node_id)
 
             if operation_type is not None:
                 conditions.append("operation = ?")
@@ -1685,19 +1645,21 @@ class MemoryStore:
             query = "SELECT * FROM evolution_log"
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY timestamp DESC"
+            query += " ORDER BY created_at DESC"
 
             cursor = conn.execute(query, values)
 
             return [
                 EvolutionLogEntry(
                     id=row["id"],
-                    timestamp=row["timestamp"],
+                    timestamp=0,  # rlm_core uses created_at text, not integer timestamp
                     operation=row["operation"],
-                    node_ids=json.loads(row["node_ids"]),
-                    from_tier=row["from_tier"],
-                    to_tier=row["to_tier"],
-                    reasoning=row["reasoning"],
+                    node_ids=[row["node_id"]],
+                    from_tier=int_to_tier.get(row["from_tier"])
+                    if row["from_tier"] is not None
+                    else None,
+                    to_tier=int_to_tier.get(row["to_tier"]) if row["to_tier"] is not None else None,
+                    reasoning=row["reason"],
                 )
                 for row in cursor.fetchall()
             ]
@@ -1932,24 +1894,13 @@ class MemoryStore:
         Returns:
             True if updated, False if node not found
         """
-        # Convert datetime to milliseconds timestamp
         from datetime import datetime
 
         if isinstance(timestamp, datetime):
-            ts_ms = int(timestamp.timestamp() * 1000)
+            rfc3339 = timestamp.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         else:
-            ts_ms = timestamp
-
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute(
-                "UPDATE nodes SET last_accessed = ? WHERE id = ?",
-                (ts_ms, node_id),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        finally:
-            conn.close()
+            rfc3339 = str(timestamp)
+        return self._core_store.update_fields(node_id, last_accessed=rfc3339)
 
     def get_nodes_by_metadata(
         self,
@@ -1970,25 +1921,15 @@ class MemoryStore:
         Returns:
             List of matching nodes
         """
-        conn = self._get_connection()
-        try:
-            # Use JSON extract for metadata search
-            # json_extract returns the raw value, so compare directly
-            conditions = [f"json_extract(metadata, '$.{key}') = ?"]
-            values: list[Any] = [value]
-
-            if not include_archived:
-                conditions.append("tier != 'archive'")
-
-            if tier is not None:
-                conditions.append("tier = ?")
-                values.append(tier)
-
-            query = "SELECT * FROM nodes WHERE " + " AND ".join(conditions)
-            cursor = conn.execute(query, values)
-            return [self._row_to_node(row) for row in cursor.fetchall()]
-        finally:
-            conn.close()
+        # Query all nodes from rlm_core and filter by metadata
+        all_nodes = self._query_nodes_core(tier=tier, limit=1000)
+        results = []
+        for node in all_nodes:
+            if not include_archived and node.tier == "archive":
+                continue
+            if node.metadata.get(key) == value:
+                results.append(node)
+        return results
 
     # =========================================================================
     # FTS5 Full-Text Search (Phase 4: Massive Context)
@@ -2033,62 +1974,18 @@ class MemoryStore:
         if not query or not query.strip():
             return []
 
-        conn = self._get_connection()
         try:
-            # Build query with optional filters
-            # BM25 scoring: SQLite returns negative values (more negative = better match)
-            # We negate the score so users see positive values (higher = better)
-            # Always join with nodes table to exclude archived nodes (soft-deleted)
-            base_query = """
-                SELECT
-                    f.node_id,
-                    f.content,
-                    f.type,
-                    -bm25(content_fts) as score,
-                    snippet(content_fts, 1, '<b>', '</b>', '...', 32) as snippet
-                FROM content_fts f
-                JOIN nodes n ON f.node_id = n.id
-                WHERE content_fts MATCH ?
-                AND n.tier != 'archive'
-            """
+            results = self._search_core(query, limit)
 
-            params: list[Any] = [query]
-            conditions = []
-
+            # Apply filters
             if node_type:
-                conditions.append("f.type = ?")
-                params.append(node_type)
-
+                results = [r for r in results if r.node_type == node_type]
             if min_confidence is not None:
-                conditions.append("n.confidence >= ?")
-                params.append(min_confidence)
+                results = [r for r in results if r.bm25_score >= min_confidence]
 
-            if conditions:
-                base_query += " AND " + " AND ".join(conditions)
-
-            # Higher score = better match (after negation), so order descending
-            base_query += " ORDER BY score DESC LIMIT ?"
-            params.append(limit)
-
-            cursor = conn.execute(base_query, params)
-            results = []
-            for row in cursor.fetchall():
-                results.append(
-                    SearchResult(
-                        node_id=row["node_id"],
-                        content=row["content"],
-                        node_type=row["type"],
-                        bm25_score=row["score"],
-                        snippet=row["snippet"],
-                    )
-                )
-            return results
-
+            return results[:limit]
         except Exception:
-            # FTS query syntax error or other issue
             return []
-        finally:
-            conn.close()
 
     def search_prefix(self, prefix: str, limit: int = 20) -> list[SearchResult]:
         """
@@ -2128,78 +2025,33 @@ class MemoryStore:
 
     def rebuild_fts_index(self) -> int:
         """
-        Rebuild the FTS index from the nodes table.
-
-        Useful after bulk imports or if index gets out of sync.
+        Rebuild the FTS index. Managed by rlm_core internally.
 
         Returns:
             Number of nodes indexed
         """
-        conn = self._get_connection()
-        try:
-            # Clear and rebuild
-            conn.execute("DELETE FROM content_fts")
-            cursor = conn.execute(
-                "INSERT INTO content_fts(node_id, content, type) "
-                "SELECT id, content, type FROM nodes WHERE tier != 'archive'"
-            )
-            conn.commit()
-            return cursor.rowcount
-        finally:
-            conn.close()
+        # rlm_core manages its own search index
+        all_nodes = self._query_nodes_core(limit=10000)
+        return len(all_nodes)
 
     def get_fts_stats(self) -> dict[str, Any]:
         """
-        Get statistics about the FTS index.
+        Get statistics about the search index.
 
         Returns:
             Dict with index statistics
         """
-        conn = self._get_connection()
-        try:
-            # Count indexed documents
-            cursor = conn.execute("SELECT COUNT(*) as count FROM content_fts")
-            doc_count = cursor.fetchone()["count"]
-
-            # Get index size (approximate)
-            cursor = conn.execute("SELECT SUM(length(content)) as total_chars FROM content_fts")
-            row = cursor.fetchone()
-            total_chars = row["total_chars"] if row["total_chars"] else 0
-
-            return {
-                "indexed_documents": doc_count,
-                "total_characters": total_chars,
-                "estimated_tokens": total_chars // 4,
-            }
-        finally:
-            conn.close()
+        all_nodes = self._query_nodes_core(limit=10000)
+        total_chars = sum(len(n.content) for n in all_nodes)
+        return {
+            "indexed_documents": len(all_nodes),
+            "total_characters": total_chars,
+            "estimated_tokens": total_chars // 4,
+        }
 
     # =========================================================================
     # Helpers
     # =========================================================================
-
-    def _row_to_node(self, row: sqlite3.Row) -> Node:
-        """Convert a database row to a Node object."""
-        metadata = row["metadata"]
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-
-        return Node(
-            id=row["id"],
-            type=row["type"],
-            content=row["content"],
-            tier=row["tier"],
-            confidence=row["confidence"],
-            subtype=row["subtype"],
-            embedding=row["embedding"],
-            provenance=row["provenance"],
-            metadata=metadata or {},
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            last_accessed=row["last_accessed"],
-            access_count=row["access_count"],
-        )
-
 
     # =========================================================================
     # Micro Mode Memory Access (SPEC-14.50-14.55)
@@ -2271,27 +2123,125 @@ class MemoryStore:
         Simple keyword extraction without LLM (SPEC-14.53).
         """
         # Common stop words to filter out
-        stop_words = frozenset({
-            "a", "an", "the", "is", "are", "was", "were", "be", "been",
-            "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "must", "shall",
-            "can", "need", "dare", "ought", "used", "to", "of", "in",
-            "for", "on", "with", "at", "by", "from", "as", "into",
-            "through", "during", "before", "after", "above", "below",
-            "between", "under", "again", "further", "then", "once",
-            "here", "there", "when", "where", "why", "how", "all",
-            "each", "few", "more", "most", "other", "some", "such",
-            "no", "nor", "not", "only", "own", "same", "so", "than",
-            "too", "very", "just", "and", "but", "if", "or", "because",
-            "until", "while", "this", "that", "these", "those", "what",
-            "which", "who", "whom", "whose", "i", "me", "my", "we", "us",
-            "you", "your", "he", "him", "his", "she", "her", "it", "its",
-            "they", "them", "their",
-        })
+        stop_words = frozenset(
+            {
+                "a",
+                "an",
+                "the",
+                "is",
+                "are",
+                "was",
+                "were",
+                "be",
+                "been",
+                "being",
+                "have",
+                "has",
+                "had",
+                "do",
+                "does",
+                "did",
+                "will",
+                "would",
+                "could",
+                "should",
+                "may",
+                "might",
+                "must",
+                "shall",
+                "can",
+                "need",
+                "dare",
+                "ought",
+                "used",
+                "to",
+                "of",
+                "in",
+                "for",
+                "on",
+                "with",
+                "at",
+                "by",
+                "from",
+                "as",
+                "into",
+                "through",
+                "during",
+                "before",
+                "after",
+                "above",
+                "below",
+                "between",
+                "under",
+                "again",
+                "further",
+                "then",
+                "once",
+                "here",
+                "there",
+                "when",
+                "where",
+                "why",
+                "how",
+                "all",
+                "each",
+                "few",
+                "more",
+                "most",
+                "other",
+                "some",
+                "such",
+                "no",
+                "nor",
+                "not",
+                "only",
+                "own",
+                "same",
+                "so",
+                "than",
+                "too",
+                "very",
+                "just",
+                "and",
+                "but",
+                "if",
+                "or",
+                "because",
+                "until",
+                "while",
+                "this",
+                "that",
+                "these",
+                "those",
+                "what",
+                "which",
+                "who",
+                "whom",
+                "whose",
+                "i",
+                "me",
+                "my",
+                "we",
+                "us",
+                "you",
+                "your",
+                "he",
+                "him",
+                "his",
+                "she",
+                "her",
+                "it",
+                "its",
+                "they",
+                "them",
+                "their",
+            }
+        )
 
         # Tokenize and filter
         import re
-        words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', query.lower())
+
+        words = re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", query.lower())
         keywords = [w for w in words if w not in stop_words and len(w) > 2]
 
         return keywords[:10]  # Limit to top 10 keywords
@@ -2338,6 +2288,7 @@ def create_micro_memory_loader(
     Returns:
         Callable that retrieves memory when invoked
     """
+
     def loader() -> list[dict[str, Any]]:
         return store.retrieve_for_query(query, k=k, use_embedding=False)
 

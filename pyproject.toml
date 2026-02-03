@@ -35,18 +35,15 @@ local = [
     "sentence-transformers>=2.0.0",  # SetFit dependency
     "gliner>=0.2.0",  # Entity/signal extraction for complexity detection
 ]
-rlm-core = [
-    # rlm-core Python bindings - build from ~/src/loop/rlm-core
-    # Install with: pip install -e ~/src/loop/rlm-core --features python
-    # Or: maturin develop --features python (from rlm-core directory)
-]
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
+[tool.maturin]
+manifest-path = "vendor/loop/rlm-core/Cargo.toml"
+features = ["python"]
+python-source = "."
+module-name = "rlm_core"
 
 [tool.ruff]
 line-length = 100

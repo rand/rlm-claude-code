@@ -1,0 +1,3 @@
+[submodule "vendor/loop"]
+	path = vendor/loop
+	url = https://github.com/rand/loop

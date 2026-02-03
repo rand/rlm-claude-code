@@ -227,25 +227,29 @@ class ReasoningTraces:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        """Initialize the decisions table schema."""
-        import sqlite3
+        """Initialize the decisions table schema.
 
-        conn = sqlite3.connect(self.store.db_path)
+        The decisions table is created by MemoryStore._init_database()
+        before rlm_core opens. This method handles migration of old
+        databases that lack epistemic columns.
+        """
+        conn = self.store._get_connection()
         try:
-            # Check if table exists and needs migration
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='decisions'"
             )
-            table_exists = cursor.fetchone() is not None
-
-            if table_exists:
-                # Run migration first for backward compatibility (SPEC-16.19)
-                # Migration adds columns that indexes depend on
+            if cursor.fetchone() is not None:
                 self._migrate_epistemic_schema(conn)
-
-            # Create/update schema (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS)
-            conn.executescript(DECISIONS_SCHEMA_SQL)
-            conn.commit()
+                # Create indexes that depend on migrated columns
+                for idx_sql in [
+                    "CREATE INDEX IF NOT EXISTS idx_decisions_verification ON decisions(verification_status)",
+                    "CREATE INDEX IF NOT EXISTS idx_decisions_verified_claim ON decisions(verified_claim_id)",
+                ]:
+                    try:
+                        conn.execute(idx_sql)
+                    except Exception:
+                        pass
+                conn.commit()
         finally:
             conn.close()
 
@@ -726,9 +730,7 @@ class ReasoningTraces:
         if claim_node is None:
             raise ValueError(f"Claim not found: {claim_id}")
         if claim_node.decision_type != "claim":
-            raise ValueError(
-                f"Node {claim_id} is not a claim (type: {claim_node.decision_type})"
-            )
+            raise ValueError(f"Node {claim_id} is not a claim (type: {claim_node.decision_type})")
 
         # 2. Get evidence from the claim's evidence_ids and/or "cites" edges
         evidence_ids = set(claim_node.evidence_ids or [])
@@ -836,8 +838,7 @@ class ReasoningTraces:
         }
         if flag_reason is not None and flag_reason not in valid_flag_reasons:
             raise ValueError(
-                f"Invalid flag_reason: {flag_reason}. "
-                f"Must be one of: {valid_flag_reasons}"
+                f"Invalid flag_reason: {flag_reason}. Must be one of: {valid_flag_reasons}"
             )
 
         # Generate verification content/summary
@@ -948,7 +949,9 @@ class ReasoningTraces:
                             claim_id=claim.id,
                             claim_text=claim.claim_text or claim.content,
                             gap_type="partial_support",
-                            gap_bits=max(0.0, support_threshold - (verification.support_score or 0.0)),
+                            gap_bits=max(
+                                0.0, support_threshold - (verification.support_score or 0.0)
+                            ),
                             suggested_action="Provide additional evidence to strengthen claim",
                         )
                     )
@@ -967,7 +970,7 @@ class ReasoningTraces:
 
         return gaps
 
-    def get_verification_report(self, goal_id: str) -> "HallucinationReport":
+    def get_verification_report(self, goal_id: str) -> HallucinationReport:
         """
         Generate a full verification report for a goal tree.
 
@@ -1060,7 +1063,7 @@ class ReasoningTraces:
         """
         import sqlite3
 
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         conn.row_factory = sqlite3.Row
         try:
             # Use recursive CTE to find all descendants
@@ -1103,7 +1106,7 @@ class ReasoningTraces:
         import sqlite3
 
         # Query for verification nodes that reference this claim
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         conn.row_factory = sqlite3.Row
         try:
             cursor = conn.execute(
@@ -1779,7 +1782,7 @@ class ReasoningTraces:
         """
         import sqlite3
 
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         conn.row_factory = sqlite3.Row
         try:
             cursor = conn.execute(
@@ -1816,7 +1819,7 @@ class ReasoningTraces:
         """
         import sqlite3
 
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         conn.row_factory = sqlite3.Row
         try:
             cursor = conn.execute(
@@ -2050,7 +2053,6 @@ class ReasoningTraces:
         flag_reason: str | None = None,
     ) -> str:
         """Create a decision node in both nodes and decisions tables."""
-        import sqlite3
 
         # Create the base node
         metadata: dict[str, Any] = {
@@ -2081,7 +2083,7 @@ class ReasoningTraces:
         )
 
         # Create the decision extension record
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         try:
             conn.execute(
                 """
@@ -2122,12 +2124,11 @@ class ReasoningTraces:
 
     def _update_decision(self, node_id: str, **kwargs: Any) -> bool:
         """Update decision-specific fields."""
-        import sqlite3
 
         if not kwargs:
             return False
 
-        conn = sqlite3.connect(self.store.db_path)
+        conn = self.store._get_connection()
         try:
             updates = []
             values = []

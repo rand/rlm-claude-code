@@ -3,39 +3,24 @@ Task complexity classification for RLM activation.
 
 Implements: Spec §6.3 Task Complexity-Based Activation
 
-Migration: When USE_RLM_CORE=true, delegates to rlm_core.PatternClassifier
+Delegates to rlm_core.PatternClassifier for classification.
 """
 
 import re
 from pathlib import Path
 
-from .config import USE_RLM_CORE
+import rlm_core
+
 from .types import MessageRole, SessionContext, TaskComplexitySignals
 
-# Conditional import of rlm_core bindings
-_rlm_core = None
-if USE_RLM_CORE:
-    try:
-        import rlm_core as _rlm_core
-    except ImportError:
-        import warnings
-        warnings.warn(
-            "RLM_USE_CORE=true but rlm_core not installed. "
-            "Falling back to Python implementation."
-        )
-        _rlm_core = None
 
-
-def _convert_to_rlm_core_context(context: SessionContext) -> "_rlm_core.SessionContext":
+def _convert_to_rlm_core_context(context: SessionContext) -> "rlm_core.SessionContext":
     """
     Convert Python SessionContext to rlm_core.SessionContext.
 
     This adapter bridges the Python implementation types to the Rust bindings.
     """
-    if _rlm_core is None:
-        raise RuntimeError("rlm_core not available")
-
-    core_ctx = _rlm_core.SessionContext()
+    core_ctx = rlm_core.SessionContext()
 
     # Convert messages
     for msg in context.messages:
@@ -46,7 +31,7 @@ def _convert_to_rlm_core_context(context: SessionContext) -> "_rlm_core.SessionC
 
     # Convert tool outputs
     for output in context.tool_outputs:
-        core_output = _rlm_core.ToolOutput(output.tool_name, output.content)
+        core_output = rlm_core.ToolOutput(output.tool_name, output.content)
         core_ctx.add_tool_output(core_output)
 
     # Cache files
@@ -238,15 +223,15 @@ def extract_complexity_signals(prompt: str, context: SessionContext) -> TaskComp
 
 
 # Singleton classifier for rlm_core (lazy initialized)
-_rlm_core_classifier = None
+rlm_core_classifier = None
 
 
-def _get_rlm_core_classifier() -> "_rlm_core.PatternClassifier":
+def _get_rlm_core_classifier() -> "rlm_core.PatternClassifier":
     """Get or create the rlm_core PatternClassifier singleton."""
-    global _rlm_core_classifier
-    if _rlm_core_classifier is None and _rlm_core is not None:
-        _rlm_core_classifier = _rlm_core.PatternClassifier()
-    return _rlm_core_classifier
+    global rlm_core_classifier
+    if rlm_core_classifier is None:
+        rlm_core_classifier = rlm_core.PatternClassifier()
+    return rlm_core_classifier
 
 
 def _should_activate_rlm_core(prompt: str, context: SessionContext) -> tuple[bool, str]:
@@ -256,8 +241,6 @@ def _should_activate_rlm_core(prompt: str, context: SessionContext) -> tuple[boo
     This provides consistent behavior with the Go/Rust implementations.
     """
     classifier = _get_rlm_core_classifier()
-    if classifier is None:
-        raise RuntimeError("rlm_core classifier not available")
 
     # Convert context to rlm_core format
     core_ctx = _convert_to_rlm_core_context(context)
@@ -281,8 +264,8 @@ def should_activate_rlm(
 
     Biased toward activation—when in doubt, use RLM.
 
-    When USE_RLM_CORE=true, delegates to rlm_core.PatternClassifier for
-    consistent behavior across Python and Go implementations.
+    Delegates to rlm_core.PatternClassifier for consistent behavior
+    across Python and Go implementations.
 
     Returns:
         (should_activate, reason) tuple
@@ -293,67 +276,7 @@ def should_activate_rlm(
     if simple_mode_forced:
         return False, "simple_mode_forced"
 
-    # Delegate to rlm_core when available
-    if _rlm_core is not None:
-        return _should_activate_rlm_core(prompt, context)
-
-    # Fall back to Python implementation
-    signals = extract_complexity_signals(prompt, context)
-
-    # High-signal indicators (each sufficient alone)
-    if signals.requires_cross_context_reasoning:
-        return True, "cross_context_reasoning"
-    if signals.debugging_task:
-        # Debugging is complex even without large outputs - need to trace causes
-        return True, "debugging_task"
-    if signals.requires_exhaustive_search:
-        # Exhaustive searches need systematic REPL-based enumeration
-        return True, "exhaustive_search"
-    if signals.security_review_task:
-        # Security reviews require careful multi-file analysis
-        return True, "security_review"
-    if signals.architecture_analysis:
-        # Architecture analysis requires system-wide understanding
-        return True, "architecture_analysis"
-    if signals.references_multiple_files and signals.files_span_multiple_modules:
-        return True, "multi_module_task"
-
-    # Accumulative signals
-    score = 0
-    reasons = []
-
-    if signals.references_multiple_files:
-        score += 2
-        reasons.append("multi_file")
-    if signals.involves_temporal_reasoning:
-        score += 2
-        reasons.append("temporal")
-    if signals.asks_about_patterns:
-        score += 2  # Codebase-wide searches require systematic exploration
-        reasons.append("pattern_search")
-    if signals.context_has_multiple_domains:
-        score += 1
-        reasons.append("multi_domain")
-    if signals.previous_turn_was_confused:
-        score += 2
-        reasons.append("prior_confusion")
-    if signals.task_is_continuation:
-        score += 1
-        reasons.append("continuation")
-    if signals.user_wants_thorough:
-        score += 2  # User explicitly wants careful analysis
-        reasons.append("user_thorough")
-
-    # Token count as tiebreaker
-    if context.total_tokens > 80000:
-        score += 1
-        reasons.append("large_context")
-
-    # Threshold: 2+ signals → activate
-    if score >= 2:
-        return True, f"complexity_score:{score}:{'+'.join(reasons)}"
-
-    return False, "simple_task"
+    return _should_activate_rlm_core(prompt, context)
 
 
 def is_definitely_simple(prompt: str, context: SessionContext) -> bool:

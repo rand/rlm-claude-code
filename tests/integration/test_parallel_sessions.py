@@ -1,16 +1,12 @@
 """Integration tests for parallel session isolation."""
-import pytest
+
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from src.memory_store import MemoryStore
 
-# Check if rlm_core is available (affects which features work)
-try:
-    import rlm_core
-    HAS_RLM_CORE = True
-except ImportError:
-    HAS_RLM_CORE = False
+import pytest
+
+from src.memory_store import MemoryStore
 
 
 class TestParallelSessions:
@@ -34,22 +30,16 @@ class TestParallelSessions:
                         node_type="fact",
                         content=f"{topic} fact {i}",
                         tier="session",
-                        metadata={"session_id": session_id}
+                        metadata={"session_id": session_id},
                     )
                     time.sleep(0.01)  # Simulate real work
 
                 # Verify isolation - should only see own facts
-                results = store.query_nodes(
-                    tier="session",
-                    session_id=session_id,
-                    limit=50
-                )
+                results = store.query_nodes(tier="session", session_id=session_id, limit=50)
 
                 for node in results:
                     if topic not in node.content:
-                        errors.append(
-                            f"Session {session_id} saw foreign content: {node.content}"
-                        )
+                        errors.append(f"Session {session_id} saw foreign content: {node.content}")
             except Exception as e:
                 errors.append(str(e))
 
@@ -73,7 +63,7 @@ class TestParallelSessions:
             node_type="fact",
             content="Database runs on port 5432",
             tier="longterm",
-            metadata={"session_id": "setup"}
+            metadata={"session_id": "setup"},
         )
 
         visible_count = {"count": 0}
@@ -109,7 +99,7 @@ class TestParallelSessions:
                         node_type="fact",
                         content=f"Rapid fact {i} from {session_id}",
                         tier="task",
-                        metadata={"session_id": session_id}
+                        metadata={"session_id": session_id},
                     )
                 write_counts[session_id] = count
             except Exception as e:
@@ -144,7 +134,7 @@ class TestParallelSessions:
                         node_type="fact",
                         content=f"Task fact {i}",
                         tier="task",
-                        metadata={"session_id": "task-session"}
+                        metadata={"session_id": "task-session"},
                     )
                 results = store.query_nodes(tier="task", session_id="task-session")
                 assert len(results) == 10
@@ -158,7 +148,7 @@ class TestParallelSessions:
                         node_type="fact",
                         content=f"Longterm fact {i}",
                         tier="longterm",
-                        metadata={"session_id": "longterm-session"}
+                        metadata={"session_id": "longterm-session"},
                     )
                 # Longterm should be visible regardless of session_id
                 results = store.query_nodes(tier="longterm", session_id="any-session")
@@ -195,7 +185,7 @@ class TestCrossContaminationPrevention:
                     node_type="fact",
                     content=f"Secret fact {i} for {session_id}",
                     tier="session",
-                    metadata={"session_id": session_id}
+                    metadata={"session_id": session_id},
                 )
 
         # Query each session and verify no cross-contamination
@@ -215,13 +205,13 @@ class TestCrossContaminationPrevention:
             node_type="fact",
             content="Session A fact",
             tier="session",
-            metadata={"session_id": "session-a"}
+            metadata={"session_id": "session-a"},
         )
         node_b = store.create_node(
             node_type="fact",
             content="Session B fact",
             tier="session",
-            metadata={"session_id": "session-b"}
+            metadata={"session_id": "session-b"},
         )
 
         # Delete session A's fact by archiving it

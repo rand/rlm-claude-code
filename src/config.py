@@ -5,45 +5,9 @@ Implements: Spec §5.3 Router Configuration
 """
 
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-
-
-def _get_use_rlm_core() -> bool:
-    """
-    Determine whether to use rlm-core Rust bindings.
-
-    Priority order:
-    1. RLM_USE_CORE environment variable (if set)
-    2. use_rlm_core setting in ~/.claude/rlm-config.json
-    3. Default: True
-
-    Returns:
-        True if rlm-core should be used, False otherwise.
-    """
-    # Check environment variable first (highest priority)
-    env_value = os.getenv("RLM_USE_CORE")
-    if env_value is not None:
-        return env_value.lower() == "true"
-
-    # Check config file
-    config_path = Path.home() / ".claude" / "rlm-config.json"
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                data = json.load(f)
-            return data.get("use_rlm_core", True)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    return True
-
-
-# Feature flag for rlm-core Rust backend (enabled by default)
-# Set RLM_USE_CORE=false env var or use_rlm_core=false in config to disable
-USE_RLM_CORE = _get_use_rlm_core()
 
 if TYPE_CHECKING:
     from .epistemic.types import VerificationConfig as VerificationConfigType
@@ -170,7 +134,9 @@ class RLMConfig:
         from .epistemic.types import VerificationConfig
 
         verification_data = data.get("verification", {})
-        verification = VerificationConfig(**verification_data) if verification_data else VerificationConfig()
+        verification = (
+            VerificationConfig(**verification_data) if verification_data else VerificationConfig()
+        )
 
         return cls(
             activation=ActivationConfig(**data.get("activation", {})),

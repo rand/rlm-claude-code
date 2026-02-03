@@ -2,7 +2,7 @@
 
 Transform Claude Code into a Recursive Language Model (RLM) agent with intelligent orchestration, unbounded context handling, persistent memory, and REPL-based decomposition.
 
-**rlm-core integration**: This project uses [rlm-core](https://github.com/rand/loop) by default as the unified RLM orchestration library, providing shared implementations with [recurse](https://github.com/rand/recurse). rlm-core provides Rust-based pattern classification (10-50x faster) via PyO3 bindings. Falls back to Python automatically when rlm-core is not installed.
+**rlm-core integration**: This project bundles [rlm-core](https://github.com/rand/loop) as a required dependency, providing shared Rust-based implementations with [recurse](https://github.com/rand/recurse). rlm-core provides 10-50x faster pattern classification via PyO3 bindings. Pre-built wheels are available for common platforms.
 
 ## What is RLM?
 
@@ -24,60 +24,33 @@ This results in better accuracy on complex tasks while optimizing cost through i
 
 - **Python 3.12+**: `brew install python@3.12` or [python.org](https://python.org)
 - **uv** (Python package manager): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **Rust 1.75+** (optional): `rustup update stable` (only if building rlm-core)
+- **Rust 1.75+** (for dev builds): `rustup update stable` — not needed if installing from pre-built wheels
 
-### Installation
+### Installation (from pre-built wheel)
+
+Download the wheel for your platform from [GitHub Releases](https://github.com/rand/rlm-claude-code/releases), then:
 
 ```bash
-# Clone the repository
-git clone https://github.com/rand/rlm-claude-code.git
+pip install rlm_claude_code-*.whl
+```
+
+### Installation (from source, requires Rust)
+
+```bash
+# Clone with submodules (rlm-core is bundled)
+git clone --recurse-submodules https://github.com/rand/rlm-claude-code.git
 cd rlm-claude-code
 
-# Install dependencies
+# Build and install (compiles rlm-core Rust library)
+maturin develop --release
+
+# Install Python dependencies
 uv sync --all-extras
 
-# Run tests to verify setup
+# Verify
+python -c "import rlm_core; print(rlm_core.version())"
 uv run pytest tests/ -v
 ```
-
-### Building rlm-core (Enabled by Default)
-
-rlm-core is enabled by default for 10-50x faster pattern classification. Build the [rlm-core](https://github.com/rand/loop) Rust library with Python bindings:
-
-```bash
-# Clone rlm-core (if not already present)
-git clone https://github.com/rand/loop.git ~/src/loop
-
-# Install maturin (Rust-Python build tool)
-uv tool install maturin
-
-# Build the Python bindings
-cd ~/src/loop/rlm-core
-PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv run maturin develop --release
-
-# Verify the build succeeded
-ls -la ~/src/loop/rlm-core/python/rlm_core*.so
-```
-
-To use rlm-core with the standalone package (not plugin):
-
-```bash
-cd /path/to/rlm-claude-code
-
-# Link rlm_core to your venv
-echo "$HOME/src/loop/rlm-core/python" > .venv/lib/python3.12/site-packages/rlm_core.pth
-
-# Verify import works
-uv run python -c "import rlm_core; print('OK:', rlm_core.PatternClassifier)"
-
-# Enable via config (persistent) or environment (temporary)
-# Config method - add to ~/.claude/rlm-config.json:
-#   "use_rlm_core": true
-# Environment method:
-export RLM_USE_CORE=true
-```
-
-**Without rlm-core**: All functionality works using Python fallback implementations. You'll see warnings but everything operates correctly.
 
 ### As a Claude Code Plugin
 
@@ -93,50 +66,18 @@ claude plugin install rlm-claude-code@rlm-claude-code
 
 #### Step 2: Set Up the Plugin Environment
 
-The plugin requires a Python virtual environment with dependencies. After installation:
+The plugin includes rlm-core (bundled via maturin). After installation:
 
 ```bash
 # Navigate to the plugin directory (adjust version number as needed)
-cd ~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/$(ls ~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/ | sort -V | tail -1)
-
-# Create venv and install dependencies
-uv venv && uv sync
-```
-
-#### Step 3: Install rlm-core for Performance (Enabled by Default)
-
-rlm-core is enabled by default. Install for 10-50x faster pattern classification:
-
-```bash
-# First, build rlm-core if you haven't already (see "Building rlm-core" section above)
-
-# Get the plugin version directory
 PLUGIN_DIR=~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/$(ls ~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/ | sort -V | tail -1)
+cd "$PLUGIN_DIR"
 
-# Link rlm_core to the plugin's venv
-echo "$HOME/src/loop/rlm-core/python" > "$PLUGIN_DIR/.venv/lib/python3.12/site-packages/rlm_core.pth"
+# Create venv and install (includes rlm-core)
+uv venv && uv sync
 
-# Verify it works
-"$PLUGIN_DIR/.venv/bin/python" -c "import rlm_core; print('rlm_core OK:', rlm_core.PatternClassifier)"
-
-# Enable rlm-core by default (add to your config)
-cat > ~/.claude/rlm-config.json << 'EOF'
-{
-  "use_rlm_core": true,
-  "activation": {
-    "mode": "complexity",
-    "fallback_token_threshold": 80000
-  },
-  "depth": {
-    "default": 2,
-    "max": 3
-  },
-  "trajectory": {
-    "verbosity": "normal",
-    "streaming": true
-  }
-}
-EOF
+# Verify rlm-core is available
+"$PLUGIN_DIR/.venv/bin/python" -c "import rlm_core; print('rlm_core OK:', rlm_core.version())"
 ```
 
 #### Step 4: Verify Installation
@@ -161,8 +102,7 @@ claude plugin update rlm-claude-code@rlm-claude-code
 PLUGIN_DIR=~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/$(ls ~/.claude/plugins/cache/rlm-claude-code/rlm-claude-code/ | sort -V | tail -1)
 cd "$PLUGIN_DIR" && uv venv && uv sync
 
-# Re-link rlm_core if using it
-echo "$HOME/src/loop/rlm-core/python" > "$PLUGIN_DIR/.venv/lib/python3.12/site-packages/rlm_core.pth"
+# rlm-core is bundled — no extra linking needed
 ```
 
 ---
@@ -241,45 +181,29 @@ Final Answer
 
 ---
 
-## rlm-core Integration (Optional)
+## rlm-core Integration
 
-RLM-Claude-Code optionally integrates with the [rlm-core](https://github.com/rand/loop) Rust library for improved performance.
+RLM-Claude-Code bundles [rlm-core](https://github.com/rand/loop), a Rust library providing high-performance pattern classification, memory storage, and trajectory tracking via PyO3 bindings.
 
-### Enabling rlm-core
+rlm-core is a required dependency — there is no Python fallback mode.
 
-There are two ways to enable rlm-core (in priority order):
-
-**1. Environment variable** (highest priority, good for testing):
-```bash
-export RLM_USE_CORE=true
-```
-
-**2. Config file** (persistent, recommended for regular use):
-
-Add `"use_rlm_core": true` to `~/.claude/rlm-config.json`:
-```json
-{
-  "use_rlm_core": true,
-  "activation": { ... }
-}
-```
+### Configuration
 
 | Setting | Behavior |
 |---------|----------|
-| `use_rlm_core: true` or unset | Use rlm-core Rust bindings (default, requires installation) |
-| `use_rlm_core: false` | Use Python fallback (always works) |
+| `activation.mode` | `"complexity"` (default), `"always"`, `"never"` |
+| `depth.default` | Default recursion depth (default: 2) |
+| `depth.max` | Maximum recursion depth (default: 3) |
 
-When rlm-core is enabled but not installed, a warning is logged and Python fallback is used automatically.
+### Performance
 
-### Performance Comparison
+| Component | Implementation |
+|-----------|---------------|
+| Pattern Classifier | Rust via PyO3 |
+| Trajectory Events | Rust types via PyO3 |
+| Memory Store | rlm_core SQLite (nodes/edges) + Python SQLite (auxiliary tables) |
 
-| Component | Python Fallback | With rlm-core |
-|-----------|-----------------|---------------|
-| Pattern Classifier | Python regex | Rust via PyO3 (10-50x faster) |
-| Trajectory Events | Python classes | Rust types via PyO3 |
-| Memory Store | Python + SQLite | Python + SQLite primary, rlm-core secondary (`-core.db`) |
-
-### Benefits of rlm-core
+### Benefits
 
 - **Consistency**: Same classification logic as recurse TUI
 - **Performance**: Rust pattern matching is significantly faster
@@ -288,17 +212,13 @@ When rlm-core is enabled but not installed, a warning is logged and Python fallb
 ### Python Bindings Usage
 
 ```python
-import os
-os.environ["RLM_USE_CORE"] = "true"
-
 from src.complexity_classifier import should_activate_rlm, extract_complexity_signals
 from src.types import SessionContext, Message, MessageRole
 
-# The bridge code auto-converts types and delegates to rlm_core when available
+# Delegates to rlm_core.PatternClassifier
 ctx = SessionContext(messages=[Message(role=MessageRole.USER, content="test")])
 signals = extract_complexity_signals("Find security vulnerabilities", ctx)
 activate, reason = should_activate_rlm("Find security vulnerabilities", ctx)
-# Returns: (True, "complexity_score:2:cross_context+pattern_search")
 ```
 
 ---
@@ -486,7 +406,6 @@ RLM stores configuration at `~/.claude/rlm-config.json`:
 
 ```json
 {
-  "use_rlm_core": true,
   "activation": {
     "mode": "complexity",
     "fallback_token_threshold": 80000
@@ -504,7 +423,6 @@ RLM stores configuration at `~/.claude/rlm-config.json`:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `use_rlm_core` | bool | Enable rlm-core Rust bindings (default: `true`) |
 | `activation.mode` | string | `"micro"`, `"complexity"`, `"always"`, `"manual"` |
 | `depth.default` | int | Default recursion depth (1-3) |
 | `trajectory.verbosity` | string | `"minimal"`, `"normal"`, `"verbose"`, `"debug"` |
@@ -515,7 +433,6 @@ RLM stores configuration at `~/.claude/rlm-config.json`:
 |----------|---------|
 | `ANTHROPIC_API_KEY` | Anthropic API access (uses Claude Code's key) |
 | `OPENAI_API_KEY` | OpenAI API access (optional, for GPT models) |
-| `RLM_USE_CORE` | Enable rlm-core Rust bindings (`true`/`false`) |
 | `RLM_CONFIG_PATH` | Custom config file location |
 | `RLM_DEBUG` | Enable debug logging |
 
