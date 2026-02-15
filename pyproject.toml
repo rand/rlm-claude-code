@@ -42,7 +42,7 @@ build-backend = "maturin"
 [tool.maturin]
 manifest-path = "vendor/loop/rlm-core/Cargo.toml"
 features = ["python"]
-python-source = "."
+python-source = "vendor/loop/rlm-core/python"
 module-name = "rlm_core"
 
 [tool.ruff]

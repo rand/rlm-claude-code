@@ -717,7 +717,7 @@ class MemoryStore:
 
         old_tier = self._map_core_tier_to_str(current.tier)
 
-        # Use update_fields to avoid Node immutability issues
+        # Build update kwargs for rlm_core.update_fields
         update_kwargs: dict[str, Any] = {}
         if "content" in kwargs:
             update_kwargs["content"] = kwargs["content"]
