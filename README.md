@@ -26,7 +26,7 @@ This results in better accuracy on complex tasks while optimizing cost through i
 - **uv** package manager — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Node.js 20+** — `brew install node` or [nodejs.org](https://nodejs.org)
 
-### Clone & Setup
+### Clone & Setup (Pre-built Binaries)
 
 ```bash
 git clone --recurse-submodules https://github.com/rand/rlm-claude-code.git
@@ -36,6 +36,31 @@ npm install
 # Verify
 npm run verify
 ```
+
+### Build from Source (Requires Rust)
+
+If you want to build rlm-core from source instead of using pre-built wheels:
+
+```bash
+# Prerequisites
+# - Rust 1.75+: rustup update stable
+# - maturin: pip install maturin
+
+git clone --recurse-submodules https://github.com/rand/rlm-claude-code.git
+cd rlm-claude-code
+
+# Build rlm-core Rust library
+maturin develop --release
+
+# Install Python dependencies
+uv sync --all-extras
+
+# Verify
+python -c "import rlm_core; print(rlm_core.version())"
+uv run pytest tests/ -v
+```
+
+**Note**: The `python-source` in `pyproject.toml` should point to `"vendor/loop/rlm-core/python"` for maturin to find the Python module correctly.
 
 ### Install as Claude Code Plugin
 
@@ -86,14 +111,33 @@ npm run ensure-setup -- --fix
 
 RLM provides a sandboxed Python environment with helper functions:
 
+**Context Variables:**
+- `conversation` — List of message dicts with role and content
+- `files` — Dict mapping filenames to content
+- `tool_outputs` — List of tool execution results
+- `working_memory` — Scratchpad for intermediate results
+
+**Helper Functions:**
+
 | Function | Description |
 |----------|-------------|
 | `peek(var, start, end)` | View slice of large content |
-| `search(var, pattern)` | Find patterns in content |
-| `llm(query, context)` | Recursive sub-query |
-| `map_reduce(content, map, reduce)` | Parallel processing |
-| `memory_query(query)` | Search persistent memory |
-| `memory_add_fact(content, conf)` | Store a fact |
+| `search(var, pattern, regex=False)` | Find patterns in content |
+| `summarize(var, max_tokens)` | LLM-powered summarization |
+| `llm(query, context, spawn_repl)` | Recursive sub-query |
+| `llm_batch([(q1,c1), (q2,c2), ...])` | Parallel LLM calls |
+| `map_reduce(content, map, reduce, n_chunks)` | Partition and aggregate |
+| `find_relevant(content, query, top_k)` | Find most relevant sections |
+
+**Memory Functions** (when enabled):
+
+| Function | Description |
+|----------|-------------|
+| `memory_query(query, limit)` | Search stored knowledge |
+| `memory_add_fact(content, confidence)` | Store a fact |
+| `memory_add_experience(content, outcome, success)` | Store an experience |
+| `memory_get_context(limit)` | Retrieve relevant context |
+| `memory_relate(node1, node2, relation)` | Create relationships |
 
 ### Example
 
@@ -110,6 +154,9 @@ search(files, 'def authenticate')
 
 # Recursive sub-query
 llm("Summarize this function", context=files['auth.py'])
+
+# Parallel processing
+map_reduce(large_content, "Extract key points", "Combine into summary", n_chunks=4)
 ```
 
 ---
@@ -120,33 +167,166 @@ llm("Summarize this function", context=files['auth.py'])
 User Query
     │
     ▼
-┌─────────────────────────────────────────────┐
-│         INTELLIGENT ORCHESTRATOR            │
-│  • Complexity classification                │
-│  • Model selection (Opus/Sonnet/Haiku)     │
-│  • Depth budget (0-3)                       │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│              INTELLIGENT ORCHESTRATOR                   │
+│  ┌───────────────────┐   ┌───────────────────────────┐  │
+│  │ Complexity        │   │ Orchestration Decision    │  │
+│  │ Classifier        │   │ • Activate RLM?           │  │
+│  │ • Token count     │──►│ • Which model tier?       │  │
+│  │ • Cross-file refs │   │ • Depth budget (0-3)?     │  │
+│  │ • Query patterns  │   │ • Tool access level?      │  │
+│  └───────────────────┘   └───────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
     │
     ▼ (if RLM activated)
-┌─────────────────────────────────────────────┐
-│           RLM EXECUTION ENGINE              │
-│  ┌─────────────┐    ┌─────────────────┐    │
-│  │ Context Mgr │───►│ REPL Sandbox    │    │
-│  │ Externalize │    │ peek/search/llm │    │
-│  └─────────────┘    └─────────────────┘    │
-│  ┌─────────────┐    ┌─────────────────┐    │
-│  │ Recursive   │    │ Tool Bridge     │    │
-│  │ Handler     │    │ bash/read/grep  │    │
-│  └─────────────┘    └─────────────────┘    │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                 RLM EXECUTION ENGINE                    │
+│                                                         │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │  Context Manager │    │     REPL Sandbox         │   │
+│  │  • Externalize   │───►│  • peek(), search()      │   │
+│  │    conversation  │    │  • llm(), llm_batch()    │   │
+│  │  • files, tools  │    │  • map_reduce()          │   │
+│  └──────────────────┘    │  • memory_*() functions  │   │
+│                          └──────────────────────────┘   │
+│                                     │                   │
+│                                     ▼                   │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │ Recursive Handler│    │    Tool Bridge           │   │
+│  │ • Depth ≤ 3      │    │  • bash, read, grep      │   │
+│  │ • Model cascade  │    │  • Permission control    │   │
+│  │ • Sub-query spawn│    │  • Blocked commands      │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
     │
     ▼
-┌─────────────────────────────────────────────┐
-│            PERSISTENCE LAYER                │
-│  Memory Store ─────► Memory Evolution       │
-│  Reasoning Traces ──► Strategy Cache        │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  PERSISTENCE LAYER                      │
+│                                                         │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │  Memory Store    │    │   Reasoning Traces       │   │
+│  │  • Facts, exps   │    │  • Goals, decisions      │   │
+│  │  • Hyperedges    │    │  • Options, outcomes     │   │
+│  │  • SQLite + WAL  │    │  • Decision trees        │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+│           │                         │                   │
+│           ▼                         ▼                   │
+│  ┌──────────────────┐    ┌──────────────────────────┐   │
+│  │ Memory Evolution │    │   Strategy Cache         │   │
+│  │ task → session   │    │  • Learn from success    │   │
+│  │ session → long   │    │  • Similarity matching   │   │
+│  │ decay → archive  │    │  • Suggest strategies    │   │
+│  └──────────────────┘    └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+Final Answer
 ```
+
+---
+
+## Core Components
+
+### Memory System
+
+Persistent storage for cross-session learning:
+
+- **Node Types**: facts, experiences, procedures, goals
+- **Memory Tiers**: task → session → longterm → archive
+- **Session Isolation**: task/session tiers are isolated per terminal
+- **Hyperedges**: N-ary relationships with typed roles
+- **Storage**: SQLite with WAL mode for concurrent access
+
+```python
+from src import MemoryStore, MemoryEvolution
+
+# Create and use memory
+store = MemoryStore(db_path="~/.claude/rlm-memory.db")
+fact_id = store.create_node(
+    node_type="fact",
+    content="This project uses FastAPI",
+    confidence=0.9,
+)
+
+# Evolve memory through tiers
+evolution = MemoryEvolution(store)
+evolution.consolidate(task_id="current-task")  # task → session
+evolution.promote(session_id="current-session")  # session → longterm
+evolution.decay(days_threshold=30)  # longterm → archive
+```
+
+### Reasoning Traces
+
+Track decision-making for transparency and debugging:
+
+```python
+from src import ReasoningTraces
+
+traces = ReasoningTraces(store)
+
+# Create goal and decision tree
+goal_id = traces.create_goal("Implement user authentication")
+decision_id = traces.create_decision(goal_id, "Choose auth strategy")
+
+# Track options considered
+jwt_option = traces.add_option(decision_id, "Use JWT tokens")
+session_option = traces.add_option(decision_id, "Use session cookies")
+
+# Record choice and reasoning
+traces.choose_option(decision_id, jwt_option)
+traces.reject_option(decision_id, session_option, "JWT better for API")
+
+# Get full decision tree
+tree = traces.get_decision_tree(goal_id)
+```
+
+---
+
+## Configuration
+
+RLM stores configuration at `~/.claude/rlm-config.json`:
+
+```json
+{
+  "activation": {
+    "mode": "complexity",
+    "fallback_token_threshold": 80000
+  },
+  "depth": {
+    "default": 2,
+    "max": 3
+  },
+  "trajectory": {
+    "verbosity": "normal",
+    "streaming": true
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `activation.mode` | string | `"complexity"` (default), `"always"`, `"never"` |
+| `depth.default` | int | Default recursion depth (1-3) |
+| `depth.max` | int | Maximum recursion depth (default: 3) |
+| `trajectory.verbosity` | string | `"minimal"`, `"normal"`, `"verbose"`, `"debug"` |
+
+---
+
+## Hooks
+
+### Go Binary Hooks (v0.6.0+)
+
+RLM uses compiled Go binaries for hook execution, reducing startup latency from ~500ms (Python) to ~5ms:
+
+| Hook | Binary | Purpose |
+|------|--------|---------|
+| `SessionStart` | `session-init` | Initialize RLM environment |
+| `UserPromptSubmit` | `complexity-check` | Decide if RLM should activate |
+| `Stop` | `trajectory-save` | Save trajectory on session end |
+
+### Event System
+
+Hooks emit and consume events via `~/.claude/events/`, enabling coordination between plugins.
 
 ---
 
@@ -158,7 +338,7 @@ User Query
 | `npm run ensure-setup` | Check/fix missing dependencies |
 | `npm run verify` | Verify installation |
 | `npm run test` | Run smoke tests |
-| `npm run test:full` | Run full test suite |
+| `npm run test:full` | Run full test suite (3000+ tests) |
 | `npm run build -- --all` | Build from source (requires Rust + Go) |
 
 ---
@@ -175,6 +355,23 @@ npm run build -- --all
 npm run build -- --binaries-only   # Go hooks only
 npm run build -- --wheel-only      # rlm-core wheel only
 ```
+
+### Building rlm-core (Rust Library)
+
+If you need to build or modify the rlm-core Rust library:
+
+```bash
+# From project root
+cd vendor/loop/rlm-core
+
+# Build and install for development
+maturin develop --release
+
+# Or build a wheel
+maturin build --release
+```
+
+The built wheel will be in `target/wheels/`.
 
 ---
 
@@ -207,6 +404,13 @@ claude plugins list
 ls hooks/hooks.json
 ```
 
+### Reset Everything
+
+```bash
+rm ~/.claude/rlm-config.json
+rm ~/.claude/rlm-memory.db
+```
+
 ---
 
 ## Documentation
@@ -234,6 +438,26 @@ npm run test:full
 # Run npm script tests
 npm run test:npm
 ```
+
+### Running Tests
+
+```bash
+# Quick iteration (fast mode)
+HYPOTHESIS_PROFILE=fast uv run pytest tests/unit/ -v
+
+# Standard development
+uv run pytest tests/ -v
+
+# Full CI run
+HYPOTHESIS_PROFILE=ci uv run pytest tests/ -v
+```
+
+---
+
+## References
+
+- [RLM Paper](https://arxiv.org/abs/2512.24601v1) - Zhang, Kraska, Khattab
+- [Claude Code Plugins](https://docs.anthropic.com/en/docs/claude-code)
 
 ---
 
