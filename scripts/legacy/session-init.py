@@ -2,21 +2,25 @@
 """
 Initialize RLM environment on session start.
 
-Called by: hooks/hooks.json SessionStart
+Called by: hooks/hooks.json SessionStart (via hook-dispatch.sh)
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 def init_rlm():
     """Initialize RLM configuration and state."""
     config_dir = Path.home() / ".claude"
     config_dir.mkdir(exist_ok=True)
-    
+
     config_file = config_dir / "rlm-config.json"
-    
+
     # Create default config if not exists
     if not config_file.exists():
         default_config = {
@@ -55,17 +59,36 @@ def init_rlm():
                 "abort_on_cost_threshold": 50000
             }
         }
-        
+
         with open(config_file, "w") as f:
             json.dump(default_config, f, indent=2)
-        
+
         print(f"Created RLM config at {config_file}", file=sys.stderr)
-    
+
     # Create trajectories directory
     trajectories_dir = config_dir / "rlm-trajectories"
     trajectories_dir.mkdir(exist_ok=True)
-    
+
+    # Initialize session state for persistence
+    init_session_state()
+
     print("RLM initialized", file=sys.stderr)
+
+
+def init_session_state():
+    """Initialize the RLM session state via persistence layer."""
+    session_id = os.environ.get("CLAUDE_SESSION_ID", "default")
+
+    try:
+        from src.state_persistence import get_persistence
+
+        persistence = get_persistence()
+        persistence.init_session(session_id)
+        print(f"Session state initialized for {session_id}", file=sys.stderr)
+    except ImportError as e:
+        print(f"Session state init skipped (import error): {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Session state init failed: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

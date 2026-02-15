@@ -1,218 +1,200 @@
 # Getting Started with RLM-Claude-Code
 
-This guide walks you through installing and using RLM-Claude-Code.
+Choose your installation path based on how you plan to use RLM.
 
-## Prerequisites
+---
 
-- **Python 3.12+**
-- **uv** package manager ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **Claude Code** (optional, for plugin usage)
+## Prerequisites (All Users)
 
-Verify your setup:
+- **Python 3.12+** — `brew install python@3.12` or [python.org](https://python.org)
+- **uv** package manager — [install uv](https://docs.astral.sh/uv/getting-started/installation/)
+- **Node.js 20+** — `brew install node` or [nodejs.org](https://nodejs.org)
 
 ```bash
-uv --version
-python --version
+# Verify
+uv --version && python --version && node --version
 ```
 
 ---
 
-## Installation
+## Installation Paths
 
-### Clone and Install
+### Path 1: Light User (Marketplace Install)
 
-```bash
-git clone https://github.com/rand/rlm-claude-code.git
-cd rlm-claude-code
-
-# Install all dependencies
-uv sync --all-extras
-```
-
-### Verify Installation
+**Best for:** Users who want to just use RLM without building anything.
 
 ```bash
-# Run tests (should see 3000+ pass)
-uv run pytest tests/ -v --tb=short
-
-# Type check
-uv run ty check src/
-```
-
----
-
-## As a Claude Code Plugin
-
-If you want to use RLM with Claude Code:
-
-```bash
-# Add the marketplace (one-time setup)
+# Add marketplace and install
 claude plugin marketplace add github:rand/rlm-claude-code
-
-# Install the plugin
 claude plugin install rlm-claude-code@rlm-claude-code
 ```
 
-**Alternative**: Install from local clone:
+**What happens automatically:**
+- On first session, the plugin checks dependencies
+- Downloads pre-built binaries and wheel from GitHub releases
+- Creates Python venv
+- AI sees setup status and can help if issues found
+
+**If something is missing**, the AI assistant will see the status and guide you.
+
+---
+
+### Path 2: Clone + Build
+
+**Best for:** Users who want to clone the repo and set up manually.
+
 ```bash
-# From the rlm-claude-code directory
-claude plugin install .
+# Clone with submodules
+git clone --recurse-submodules https://github.com/rand/rlm-claude-code.git
+cd rlm-claude-code
+
+# One command setup (downloads pre-built binaries)
+npm install
+
+# Verify
+npm run verify
 ```
 
-Start Claude Code and you should see:
-```
-RLM initialized
+**Then install as plugin:**
+```bash
+claude plugin install . --scope user
 ```
 
-Test it works:
+---
+
+### Path 3: Developer (Local Development)
+
+**Best for:** Developers working on RLM itself, using symlink to source.
+
+```bash
+# Clone and build everything from source
+git clone --recurse-submodules https://github.com/your-fork/rlm-claude-code.git
+cd rlm-claude-code
+
+# Build from source (requires Rust + Go)
+npm run build -- --all
+
+# Create symlink for development
+claude plugin install . --scope user
 ```
-/rlm status
+
+**What you get:**
+- `bin/` contains locally built Go binaries
+- `vendor/loop/rlm-core/target/wheels/` contains locally built wheel
+- venv uses the local wheel (no pip install needed)
+- Changes to source are immediately reflected
+
+---
+
+## Verification
+
+All users can verify their setup:
+
+```bash
+# Check setup status
+npm run ensure-setup
+
+# Verify everything works
+npm run verify
+
+# Run tests
+npm run test
+```
+
+---
+
+## Self-Healing System
+
+The plugin includes automatic dependency checking:
+
+| Check | What's Verified |
+|-------|-----------------|
+| `uv` | Package manager installed |
+| `venv` | Python virtual environment exists |
+| `binaries` | Go hook binaries for your platform |
+| `rlm_core` | Python package installed |
+
+**How it works:**
+1. On SessionStart, `ensure-setup.ts` runs
+2. Outputs JSON status to AI via hooks
+3. If `needsAttention: true`, AI guides user to fix
+
+**Manual commands:**
+```bash
+npm run ensure-setup           # Check status
+npm run ensure-setup -- --fix  # Auto-fix (downloads from GitHub)
 ```
 
 ---
 
 ## First Steps
 
-### 1. Understand the REPL
+### 1. Try the REPL
 
-RLM provides a sandboxed Python environment with context variables and helper functions:
+RLM provides a sandboxed Python environment:
 
 ```python
 # Context is automatically available:
 conversation  # List of messages
 files         # Dict of filename → content
 tool_outputs  # List of tool results
-working_memory  # Scratchpad dict
 
 # Helper functions:
-peek(files['main.py'], 0, 500)  # View first 500 chars
+peek(files['main.py'], 0, 500)     # View slice
 search(files, 'def authenticate')  # Find patterns
-llm("Summarize this code", context=files['auth.py'])  # Sub-query
+llm("Summarize this", context=file)  # Sub-query
 ```
 
-### 2. Try the Slash Commands
+### 2. Try Slash Commands
 
-| Command | What it does |
-|---------|--------------|
-| `/rlm` | Show current status |
-| `/rlm on` | Enable RLM mode |
-| `/rlm off` | Disable RLM mode |
-| `/rlm mode fast` | Quick mode (depth=1, Haiku) |
-| `/rlm mode thorough` | Deep mode (depth=3, Opus) |
-| `/simple` | Bypass RLM for one query |
+```bash
+/rlm-claude-code:rlm              # Show status
+/rlm-claude-code:rlm activate     # Launch RLM now
+/rlm-claude-code:rlm-orchestrator # Complex context tasks
+```
 
 ### 3. Understand Auto-Activation
 
-RLM automatically activates for complex tasks:
+RLM automatically activates for:
 - Large context (>80K tokens)
 - Cross-file questions
 - Debugging requests
 - Architecture discussions
 
-For simple questions, RLM stays off to avoid overhead.
-
 ---
 
 ## Configuration
 
-RLM stores settings at `~/.claude/rlm-config.json`:
+Settings at `~/.claude/rlm-config.json`:
 
 ```json
 {
-  "activation": {
-    "mode": "complexity",
-    "fallback_token_threshold": 80000
-  },
-  "depth": {
-    "default": 2,
-    "max": 3
-  },
-  "trajectory": {
-    "verbosity": "normal",
-    "streaming": true
-  }
+  "activation": { "mode": "complexity" },
+  "depth": { "default": 2, "max": 3 },
+  "trajectory": { "verbosity": "normal" }
 }
-```
-
-Edit directly or use slash commands:
-```
-/rlm mode thorough
-/rlm depth 3
-/rlm save
-```
-
----
-
-## Core Concepts
-
-### Execution Modes
-
-| Mode | Depth | Model | Best For |
-|------|-------|-------|----------|
-| `fast` | 1 | Haiku | Quick questions |
-| `balanced` | 2 | Sonnet | Most tasks (default) |
-| `thorough` | 3 | Opus | Complex debugging |
-
-### Memory System
-
-RLM can persist knowledge across sessions:
-
-```python
-from src import MemoryStore, MemoryEvolution
-
-store = MemoryStore(db_path="~/.claude/rlm-memory.db")
-
-# Store facts
-store.create_node(
-    node_type="fact",
-    content="Project uses PostgreSQL",
-    confidence=0.9,
-)
-
-# Memory evolves: task → session → longterm
-evolution = MemoryEvolution(store)
-evolution.consolidate(task_id="task-1")
-evolution.promote(session_id="session-1")
-```
-
-### Budget Tracking
-
-Control costs with limits:
-
-```python
-from src import EnhancedBudgetTracker, BudgetLimits
-
-tracker = EnhancedBudgetTracker()
-tracker.set_limits(BudgetLimits(
-    max_cost_per_task=5.0,
-    max_recursive_calls=10,
-))
-```
-
-Or via slash command:
-```
-/rlm budget $5
 ```
 
 ---
 
 ## Troubleshooting
 
+### Setup Issues
+
+```bash
+# Check what's missing
+npm run ensure-setup
+
+# Auto-fix (downloads from GitHub)
+npm run ensure-setup -- --fix
+```
+
 ### Tests Failing
 
 ```bash
-# Check dependencies
 uv sync --all-extras
-
-# Run with verbose output
 uv run pytest tests/ -v --tb=long
 ```
-
-### RLM Not Initializing (Plugin)
-
-1. Verify installation: `claude plugins list`
-2. Check hooks exist: `ls hooks/hooks.json`
-3. Test manually: `uv run python scripts/init_rlm.py`
 
 ### Reset Everything
 
@@ -225,7 +207,6 @@ rm ~/.claude/rlm-memory.db
 
 ## Next Steps
 
-- [User Guide](./user-guide.md) - Complete usage documentation
-- [Architecture](./process/architecture.md) - Design decisions
-- [SPEC Overview](./spec/00-overview.md) - Capability specifications
-- [README](../README.md) - Quick reference
+- [User Guide](./user-guide.md) — Complete usage documentation
+- [Architecture](./process/architecture.md) — Design decisions
+- [SPEC Overview](./spec/00-overview.md) — Capability specifications

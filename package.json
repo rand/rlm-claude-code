@@ -1,0 +1,67 @@
+{
+  "name": "rlm-claude-code",
+  "version": "0.7.1",
+  "description": "Transform Claude Code into a Recursive Language Model (RLM) agent with intelligent orchestration, unbounded context handling, persistent memory, and REPL-based decomposition.",
+  "main": "index.js",
+  "scripts": {
+    "preinstall": "npx ts-node scripts/npm/check-prerequisites.ts",
+    "install": "npx ts-node scripts/npm/setup.ts",
+    "postinstall": "npx ts-node scripts/npm/verify-install.ts",
+    "build": "npx ts-node scripts/npm/build.ts",
+    "build:all": "npx ts-node scripts/npm/build.ts --all",
+    "build:binaries": "npx ts-node scripts/npm/build.ts --binaries-only",
+    "build:wheel": "npx ts-node scripts/npm/build.ts --wheel-only",
+    "verify": "npx ts-node scripts/npm/verify.ts",
+    "test": "npx ts-node scripts/npm/test.ts",
+    "test:quick": "npx ts-node scripts/npm/test.ts --quick",
+    "test:full": "npx ts-node scripts/npm/test.ts --full",
+    "clean": "npx ts-node scripts/npm/clean.ts",
+    "download:binaries": "npx ts-node scripts/npm/download-binaries.ts",
+    "download:wheel": "npx ts-node scripts/npm/download-wheel.ts",
+    "ensure-setup": "npx ts-node scripts/npm/ensure-setup.ts",
+    "test:npm": "node --test --import tsx scripts/npm/__tests__/*.test.ts"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "rlm",
+    "recursive-language-model",
+    "ai",
+    "llm",
+    "orchestration",
+    "context-management"
+  ],
+  "author": "rand",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rand/rlm-claude-code.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rand/rlm-claude-code/issues"
+  },
+  "homepage": "https://github.com/rand/rlm-claude-code#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "hooks/",
+    "commands/",
+    "skills/",
+    "scripts/",
+    "pyproject.toml",
+    "uv.lock",
+    "README.md",
+    "LICENSE",
+    "*.whl"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tar": "^7.5.7",
+    "ts-node": "^10.9.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.0"
+  }
+}

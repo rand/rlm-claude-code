@@ -3,13 +3,30 @@ Toggle or configure RLM (Recursive Language Model) mode.
 ## Usage
 
 - `/rlm-claude-code:rlm` — Show current RLM status and configuration
-- `/rlm-claude-code:rlm on` — Force RLM mode for this session
+- `/rlm-claude-code:rlm activate` — Launch RLM orchestrator immediately
+- `/rlm-claude-code:rlm now` — Alias for activate (launch orchestrator now)
+- `/rlm-claude-code:rlm on` — Enable auto-activation for this session (mode: always)
 - `/rlm-claude-code:rlm off` — Disable RLM mode (use standard Claude Code)
 - `/rlm-claude-code:rlm auto` — Use complexity-based activation (default)
 - `/rlm-claude-code:rlm verbose` — Enable verbose trajectory output
 - `/rlm-claude-code:rlm debug` — Enable debug trajectory output with full content
 
 > **Tip**: You can create a shell alias: `alias rlm='claude skill rlm-claude-code:rlm'`
+
+## Activation Commands
+
+| Command | Action |
+|---------|--------|
+| `activate` or `now` | Immediately launch the RLM orchestrator agent |
+| `on` | Enable auto-activation (RLM activates on complex prompts) |
+| `off` | Disable auto-activation (manual mode) |
+| `auto` | Use complexity-based activation (default) |
+
+When you run `/rlm-claude-code:rlm activate`, the orchestrator agent will be invoked to handle your task with:
+- Context decomposition for large inputs
+- Recursive sub-queries for complex reasoning
+- Memory persistence across sessions
+- Intelligent model and depth selection
 
 ## Current Configuration
 

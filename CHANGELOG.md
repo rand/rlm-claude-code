@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.7.2] - 2026-02-14
+
+### Added
+- **Config-aware activation in complexity-check hook** — Go binary now respects `activation.mode` setting from `rlm-config.json`:
+  - `"always"`: Activates on all non-trivial prompts
+  - `"never"` / `"manual"`: Never auto-activates
+  - `"complexity"` / `"auto"`: Uses complexity-based activation (default)
+- **Orchestrator trigger hook** — UserPromptSubmit now includes a hook that outputs RLM activation guidance, prompting Claude to invoke the rlm-orchestrator agent
+- **`/rlm activate` command** — New slash command to launch the RLM orchestrator agent immediately
+- **Context synchronization hooks** — PreToolUse and PostToolUse hooks populate `SessionContext`:
+  - `scripts/sync-context.py` — Tracks tool invocations and pending file reads
+  - `scripts/capture-output.py` — Captures tool outputs and file content for RLM context
+- **NPM workflow with TypeScript scripts** — Streamlined build and development workflow
+- **Skills moved to `skills/` directory** — Constraint verification and context management skills now in dedicated `skills/` folder
+
+### Changed
+- **Node.js 20+ now required** — NPM scripts and build tooling require Node.js 20 or higher
+- **Documentation overhaul** — README, getting-started, and user-guide updated with:
+  - NPM workflow instructions
+  - Updated activation modes documentation
+  - Clearer plugin installation steps
+
+### Fixed
+- **Config-aware hook activation** — complexity-check now reads config before deciding to activate, respecting user preferences
+- **Activation mode consistency** — All hooks now properly support `always`, `never`, and `complexity` modes
+
+### Removed
+- `.claude/dp-config.yaml` — DP configuration removed (DP not used in this plugin)
+- `.claude/skills/` directory — Skills moved to top-level `skills/` directory
+
+## [0.7.1] - 2026-02-14
+
+### Fixed
+- **Trajectory files not saved** — session state was never initialized because neither Go binaries nor Python fallbacks called `persistence.init_session()`
+- Go `session-init` binary now calls Python `persistence.init_session()` on every session start
+- Go `trajectory-save` binary now calls Python `persistence.save_state()` on session end
+- Renamed Python fallback scripts to match hook-dispatch.sh expected names:
+  - `init_rlm.py` → `session-init.py`
+  - `save_trajectory.py` → `trajectory-save.py`
+- Python fallback `session-init.py` now includes `init_session_state()` call
+- **Session state not persisted to disk** — `init_session()` now calls `save_state()` after creating a new session so state survives across process boundaries
+- **UserPromptSubmit hook error with slash commands** — both complexity-check command hook and RLM guidance prompt hook now use `^(?!/).*` matcher to skip messages starting with `/`
+- **Context files (`_context.json`) always empty** — added `PreToolUse` and `PostToolUse` hooks to populate `SessionContext`:
+  - `scripts/sync-context.py` — tracks tool invocations and pending file reads
+  - `scripts/capture-output.py` — captures tool outputs and file content for RLM context
+  - Both scripts read JSON from stdin (Claude Code's hook protocol) with fallback to environment variables
+
 ## [0.7.0] - 2026-02-02
 
 ### Changed

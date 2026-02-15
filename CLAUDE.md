@@ -1,18 +1,21 @@
 # RLM-Claude-Code
 
-Transform Claude Code into a Recursive Language Model agent with intelligent orchestration, persistent memory, and REPL-based context decomposition.
+Context for developers working on the RLM-Claude-Code project.
 
 ## Quick Start
 
 ```bash
-# Setup
-uv sync --all-extras
+# Setup (downloads pre-built binaries)
+npm install
+
+# Verify installation
+npm run verify
 
 # Type check
 uv run ty check src/
 
 # Test (3000+ tests)
-uv run pytest tests/ -v
+npm run test:full
 
 # Install as plugin
 claude plugins install . --scope user
@@ -22,56 +25,30 @@ claude plugins install . --scope user
 
 ```
 rlm-claude-code/
-├── CLAUDE.md                       # You are here
-├── README.md                       # User-facing documentation
-├── rlm-claude-code-spec.md         # Technical specification
+├── CLAUDE.md                       # You are here (developer context)
+├── README.md                       # User-facing overview
 ├── docs/
 │   ├── getting-started.md          # Installation guide
 │   ├── user-guide.md               # Complete usage docs
 │   ├── spec/                       # Capability specifications
-│   │   ├── 00-overview.md          # SPEC index
-│   │   ├── 01-repl-functions.md    # Advanced REPL (SPEC-01)
-│   │   ├── 02-memory-foundation.md # Memory store (SPEC-02)
-│   │   ├── 03-memory-evolution.md  # Memory tiers (SPEC-03)
-│   │   ├── 04-reasoning-traces.md  # Decision tracking (SPEC-04)
-│   │   └── 05-budget-tracking.md   # Cost control (SPEC-05)
-│   └── process/
-│       ├── README.md               # Process index
-│       ├── architecture.md         # ADRs
-│       ├── implementation.md       # Implementation phases
-│       ├── code-review.md          # Review checklist
-│       ├── testing.md              # Testing strategy
-│       └── debugging.md            # Debug workflow
-├── src/
-│   ├── __init__.py                 # Public API exports
-│   ├── types.py                    # Core types
-│   ├── config.py                   # Configuration
+│   └── process/                    # Architecture, ADRs, testing
+├── src/                            # Python source code
 │   ├── orchestrator.py             # Main RLM loop
 │   ├── intelligent_orchestrator.py # Claude-powered decisions
-│   ├── auto_activation.py          # Complexity-based activation
 │   ├── context_manager.py          # Context externalization
 │   ├── repl_environment.py         # Sandboxed Python REPL
-│   ├── recursive_handler.py        # Sub-query management
 │   ├── memory_store.py             # SQLite memory (SPEC-02)
 │   ├── memory_evolution.py         # Memory tiers (SPEC-03)
 │   ├── reasoning_traces.py         # Decision trees (SPEC-04)
 │   ├── enhanced_budget.py          # Cost tracking (SPEC-05)
-│   ├── cost_tracker.py             # Token/cost accounting
-│   ├── trajectory.py               # Event logging
-│   ├── trajectory_analysis.py      # Strategy extraction
-│   ├── strategy_cache.py           # Learn from success
-│   ├── tool_bridge.py              # Controlled tool access
-│   ├── api_client.py               # LLM API wrapper
-│   ├── smart_router.py             # Model selection
 │   └── ...
-├── tests/
-│   ├── unit/                       # Unit tests
-│   ├── integration/                # Integration tests
-│   ├── property/                   # Hypothesis tests
-│   ├── security/                   # Security tests
-│   └── benchmarks/                 # Performance tests
-├── scripts/                        # Hook scripts
-├── hooks/                          # hooks.json
+├── tests/                          # Test suite
+├── scripts/npm/                    # TypeScript npm scripts
+│   ├── ensure-setup.ts             # Self-healing setup
+│   ├── hook-dispatch.ts            # Cross-platform hook dispatcher
+│   ├── download-binaries.ts        # Download Go binaries
+│   └── download-wheel.ts           # Download Python wheel
+├── hooks/                          # hooks.json (Claude Code hooks)
 └── commands/                       # Slash commands
 ```
 
@@ -79,97 +56,36 @@ rlm-claude-code/
 
 **Read before making changes:**
 
-1. `README.md` — Architecture and component overview
+1. `README.md` — Architecture overview
 2. `docs/spec/00-overview.md` — Capability specifications
 3. `docs/process/architecture.md` — Design decisions (ADRs)
 
 ## Development Commands
 
 ```bash
-# Type check (must pass)
-uv run ty check src/
+# Setup
+npm install           # Full setup with pre-built binaries
+npm run ensure-setup  # Check/fix missing dependencies
+npm run verify        # Verify installation
 
-# Lint (must pass)
-uv run ruff check src/ --fix
-uv run ruff format src/
+# Testing
+npm run test          # Run smoke tests
+npm run test:full     # Run full test suite (3000+ tests)
+npm run test:npm      # Run TypeScript tests for npm scripts
 
-# All tests
-uv run pytest tests/ -v
+# Building
+npm run build         # Download binaries + install deps
+npm run build -- --all  # Build from source (needs Rust + Go)
 
-# By category
-uv run pytest tests/unit/ -v
-uv run pytest tests/integration/ -v
-uv run pytest tests/property/ -v -m hypothesis
-uv run pytest tests/security/ -v
-uv run pytest tests/benchmarks/ --benchmark-only
+# Python tools
+uv run ty check src/  # Type check (must pass)
+uv run ruff check src/ --fix  # Lint (must pass)
+uv run ruff format src/       # Format
 
-# With coverage
-uv run pytest tests/ -v --cov=src/ --cov-report=html
+# Direct pytest
+uv run pytest tests/ -v       # All tests
+uv run pytest tests/unit/ -v  # Unit tests only
 ```
-
-## Architecture
-
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────────────┐
-│         INTELLIGENT ORCHESTRATOR            │
-│  • Complexity classification                │
-│  • Model selection (Opus/Sonnet/Haiku)     │
-│  • Depth budget (0-3)                       │
-│  • Tool access level                        │
-└─────────────────────────────────────────────┘
-    │
-    ▼ (if RLM activated)
-┌─────────────────────────────────────────────┐
-│           RLM EXECUTION ENGINE              │
-│  ┌─────────────┐    ┌─────────────────┐    │
-│  │ Context Mgr │───►│ REPL Sandbox    │    │
-│  │ Externalize │    │ peek/search/llm │    │
-│  └─────────────┘    │ map_reduce      │    │
-│                     │ memory_*        │    │
-│  ┌─────────────┐    └─────────────────┘    │
-│  │ Recursive   │    ┌─────────────────┐    │
-│  │ Handler     │    │ Tool Bridge     │    │
-│  │ depth ≤ 3   │    │ bash/read/grep  │    │
-│  └─────────────┘    └─────────────────┘    │
-└─────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────┐
-│            PERSISTENCE LAYER                │
-│  Memory Store ─────► Memory Evolution       │
-│  (SQLite+WAL)        (task→session→long)   │
-│  Reasoning Traces ──► Strategy Cache        │
-│  (decision trees)     (learn from success)  │
-└─────────────────────────────────────────────┘
-    │
-    ▼
-Budget Tracking → Trajectory → Final Answer
-```
-
-## Implementation Status
-
-All phases complete:
-
-| Phase | Focus | Status |
-|-------|-------|--------|
-| 1 | Core Infrastructure | Complete |
-| 2 | Claude Code Integration | Complete |
-| 3 | Optimization | Complete |
-| 4 | Advanced Features | Complete |
-| 5 | Intelligent Orchestration | Complete |
-
-SPEC implementations:
-
-| Spec | Component | Status |
-|------|-----------|--------|
-| SPEC-01 | Advanced REPL Functions | Complete |
-| SPEC-02 | Memory Foundation | Complete |
-| SPEC-03 | Memory Evolution | Complete |
-| SPEC-04 | Reasoning Traces | Complete |
-| SPEC-05 | Enhanced Budget Tracking | Complete |
 
 ## Key Technologies
 
@@ -183,37 +99,6 @@ SPEC implementations:
 | RestrictedPython | REPL sandbox |
 | SQLite | Memory persistence |
 
-## REPL Helper Functions
-
-| Function | Purpose |
-|----------|---------|
-| `peek(var, start, end)` | View slice of context |
-| `search(var, pattern, regex)` | Find patterns |
-| `summarize(var, max_tokens)` | LLM summarization |
-| `llm(query, context)` | Recursive sub-query |
-| `llm_batch(queries)` | Parallel sub-queries |
-| `map_reduce(content, map_p, reduce_p)` | Partition+aggregate |
-| `find_relevant(content, query, top_k)` | Relevance search |
-| `extract_functions(content)` | Parse functions |
-| `run_tool(tool, *args)` | Run CLI tools (uv, ty, ruff) |
-| `memory_query(query)` | Search memory |
-| `memory_add_fact(content, conf)` | Store fact |
-| `memory_add_experience(...)` | Store experience |
-
-## REPL Libraries
-
-| Library | Alias | Purpose |
-|---------|-------|---------|
-| `re` | - | Regular expressions |
-| `json` | - | JSON encoding/decoding |
-| `pydantic` | `BaseModel`, `Field` | Data validation |
-| `hypothesis` | `given`, `st` | Property-based testing |
-| `cpmpy` | `cp` | Constraint programming |
-| `numpy` | `np` | Numerical computing |
-| `pandas` | `pd` | DataFrames and analysis |
-| `polars` | `pl` | Fast DataFrames |
-| `seaborn` | `sns` | Statistical visualization |
-
 ## Code Style
 
 - Type annotations on all public functions
@@ -221,37 +106,78 @@ SPEC implementations:
 - No functions >50 lines
 - Pydantic models at API boundaries
 
-## Testing Requirements
-
-- Unit tests for all functions
-- Property tests for data transformations
-- Security tests for REPL operations
-- Integration tests for component interactions
-- 3000+ tests total
-
 ## Before Committing
 
 1. `uv run ty check src/` — Must pass
 2. `uv run ruff check src/` — Must pass
 3. `uv run pytest tests/ -v` — Must pass
-4. Run `/code-review` if significant changes
+4. `npm run test:npm` — Must pass (npm scripts)
 
-## Slash Commands
+## Contributing
 
-| Command | Purpose |
-|---------|---------|
-| `/rlm` | Toggle/configure RLM mode |
-| `/rlm status` | Show configuration |
-| `/rlm mode <fast\|balanced\|thorough>` | Set mode |
-| `/rlm-orchestrator` | Launch RLM agent for complex context tasks |
-| `/simple` | Bypass RLM once |
-| `/trajectory <file>` | Analyze trajectory |
-| `/test` | Run tests |
-| `/bench` | Run benchmarks |
-| `/code-review` | Review changes |
+### Commit Message Format
+
+Use conventional commits:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+```
+
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+### PR Checklist
+
+- [ ] Type check passes: `uv run ty check src/`
+- [ ] Lint passes: `uv run ruff check src/`
+- [ ] Tests pass: `uv run pytest tests/ -v`
+- [ ] NPM tests pass: `npm run test:npm`
+- [ ] Documentation updated if needed
+- [ ] Commit messages follow conventional format
+
+## Self-Healing Setup System
+
+The plugin includes automatic dependency management:
+
+### Components
+
+| File | Purpose |
+|------|---------|
+| `scripts/npm/ensure-setup.ts` | Checks and fixes dependencies |
+| `scripts/npm/hook-dispatch.ts` | Cross-platform hook dispatcher |
+| `scripts/npm/download-binaries.ts` | Downloads Go binaries from GitHub |
+| `scripts/npm/download-wheel.ts` | Downloads Python wheel from GitHub |
+| `hooks/hooks.json` | Hook configuration (uses npx ts-node) |
+
+### How It Works
+
+1. On SessionStart, `ensure-setup.ts --json` runs
+2. Checks: `uv`, venv, binaries, `rlm_core`
+3. Outputs JSON status to AI via `hookSpecificOutput`
+4. AI can guide user to fix issues if `needsAttention: true`
+
+### Installation Modes
+
+| Mode | Detection | Behavior |
+|------|-----------|----------|
+| marketplace | No `.git`, no `/dev/` in path | Download from GitHub releases |
+| dev | `.git` exists or `/dev/` in path | Prompt to build from source |
+
+## Implementation Status
+
+| Spec | Component | Status |
+|------|-----------|--------|
+| SPEC-01 | Advanced REPL Functions | Complete |
+| SPEC-02 | Memory Foundation | Complete |
+| SPEC-03 | Memory Evolution | Complete |
+| SPEC-04 | Reasoning Traces | Complete |
+| SPEC-05 | Enhanced Budget Tracking | Complete |
 
 ## References
 
 - [RLM Paper](https://arxiv.org/abs/2512.24601v1)
-- [README](./README.md) — Full documentation
+- [README](./README.md) — User overview
+- [Getting Started](./docs/getting-started.md) — Installation
 - [User Guide](./docs/user-guide.md) — Usage details
+- [SPEC Overview](./docs/spec/00-overview.md) — Specifications

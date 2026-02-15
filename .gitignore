@@ -20,6 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# claude code
+.claude/
+node_modules/
+
 # Virtual environments
 .venv/
 venv/
@@ -52,6 +56,9 @@ htmlcov/
 .reasoning_logs/
 .beads/
 
+# Built wheel at root (for marketplace distribution)
+/*.whl
+
 # OS
 .DS_Store
 Thumbs.db
@@ -59,3 +66,6 @@ Thumbs.db
 
 # Go build output
 bin/
+
+# Agent state
+.agents/

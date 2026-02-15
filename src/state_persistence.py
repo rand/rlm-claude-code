@@ -123,6 +123,8 @@ class StatePersistence:
             # Create new session
             self._current_state = RLMSessionState(session_id=session_id)
             self._current_context = SessionContext()
+            # Save initial state to disk so hooks can persist across processes
+            self.save_state(session_id)
             return self._current_state
 
     def save_state(self, session_id: str | None = None) -> Path:

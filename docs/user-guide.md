@@ -253,40 +253,44 @@ memory_relate(fact1_id, fact2_id, "supports")
 
 | Command | Description |
 |---------|-------------|
-| `/rlm` | Show current RLM status |
-| `/rlm on` | Enable RLM for this session |
-| `/rlm off` | Disable RLM mode |
-| `/rlm status` | Show detailed configuration |
+| `/rlm-claude-code:rlm` | Show current RLM status |
+| `/rlm-claude-code:rlm activate` | Launch RLM orchestrator immediately |
+| `/rlm-claude-code:rlm now` | Alias for activate |
+| `/rlm-claude-code:rlm on` | Enable RLM for this session |
+| `/rlm-claude-code:rlm off` | Disable RLM mode |
+| `/rlm-claude-code:rlm status` | Show detailed configuration |
 
 ### Mode Commands
 
 | Command | Description |
 |---------|-------------|
-| `/rlm mode fast` | Quick, shallow analysis |
-| `/rlm mode balanced` | Standard processing (default) |
-| `/rlm mode thorough` | Deep, comprehensive analysis |
+| `/rlm-claude-code:rlm mode fast` | Quick, shallow analysis |
+| `/rlm-claude-code:rlm mode balanced` | Standard processing (default) |
+| `/rlm-claude-code:rlm mode thorough` | Deep, comprehensive analysis |
 
 ### Configuration Commands
 
 | Command | Description |
 |---------|-------------|
-| `/rlm depth <0-3>` | Set maximum recursion depth |
-| `/rlm budget $X` | Set session cost limit |
-| `/rlm model <name>` | Force model (opus/sonnet/haiku/auto) |
-| `/rlm tools <level>` | Tool access (none/repl/read/full) |
-| `/rlm verbosity <level>` | Output detail (minimal/normal/verbose/debug) |
-| `/rlm reset` | Reset all settings to defaults |
-| `/rlm save` | Save current preferences to disk |
+| `/rlm-claude-code:rlm depth <0-3>` | Set maximum recursion depth |
+| `/rlm-claude-code:rlm budget $X` | Set session cost limit |
+| `/rlm-claude-code:rlm model <name>` | Force model (opus/sonnet/haiku/auto) |
+| `/rlm-claude-code:rlm tools <level>` | Tool access (none/repl/read/full) |
+| `/rlm-claude-code:rlm verbosity <level>` | Output detail (minimal/normal/verbose/debug) |
+| `/rlm-claude-code:rlm reset` | Reset all settings to defaults |
+| `/rlm-claude-code:rlm save` | Save current preferences to disk |
 
 ### Other Commands
 
 | Command | Description |
 |---------|-------------|
-| `/simple` | Bypass RLM for current query only |
-| `/trajectory <file>` | Analyze a saved trajectory file |
-| `/test` | Run the test suite |
-| `/bench` | Run performance benchmarks |
-| `/code-review` | Review code changes |
+| `/rlm-claude-code:simple` | Bypass RLM for current query only |
+| `/rlm-claude-code:trajectory <file>` | Analyze a saved trajectory file |
+| `/rlm-claude-code:test` | Run the test suite |
+| `/rlm-claude-code:bench` | Run performance benchmarks |
+| `/rlm-claude-code:code-review` | Review code changes |
+
+> **Note**: The full namespace `rlm-claude-code:` is required for all commands.
 
 ---
 
@@ -345,7 +349,23 @@ RLM analyzes each query to decide whether to activate:
 1. **Context Size**: Large contexts (>80K tokens) trigger activation
 2. **Query Complexity**: Cross-file references, debugging keywords
 3. **Pattern Matching**: Architecture questions, comparison requests
-4. **User Preference**: Manual `/rlm on` overrides everything
+4. **User Preference**: Manual `/rlm-claude-code:rlm activate` overrides everything
+
+### Activation Modes
+
+Configure in `~/.claude/rlm-config.json`:
+
+```json
+{
+  "activation": { "mode": "complexity" }
+}
+```
+
+| Mode | Config Value | Behavior |
+|------|--------------|----------|
+| **Complexity** (default) | `"complexity"` or `"auto"` | RLM activates when complexity signals detected |
+| **Always** | `"always"` | RLM activates on every non-trivial prompt |
+| **Manual** | `"manual"` or `"never"` | RLM never auto-activates |
 
 ### Complexity Signals
 
@@ -360,9 +380,11 @@ RLM analyzes each query to decide whether to activate:
 ### Controlling Activation
 
 ```
-/rlm on          # Force activation for all queries
-/rlm off         # Disable auto-activation
-/simple          # Skip activation for one query
+/rlm-claude-code:rlm activate   # Launch orchestrator immediately
+/rlm-claude-code:rlm now        # Alias for activate
+/rlm-claude-code:rlm on         # Enable auto-activation (always mode)
+/rlm-claude-code:rlm off        # Disable auto-activation
+/rlm-claude-code:simple         # Skip activation for one query
 ```
 
 ### Viewing Decisions

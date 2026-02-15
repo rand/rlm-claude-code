@@ -13,6 +13,43 @@ import (
 	"github.com/rand/rlm-claude-code/internal/hookio"
 )
 
+// initSessionState initializes the RLM session state via Python.
+// This must be called on every session start to ensure persistence is ready.
+func initSessionState(pluginRoot string, venvPath string) {
+	sessionID := os.Getenv("CLAUDE_SESSION_ID")
+	if sessionID == "" {
+		sessionID = "default"
+	}
+
+	pythonPath := filepath.Join(venvPath, "bin", "python")
+
+	// Check if python exists
+	if _, err := os.Stat(pythonPath); os.IsNotExist(err) {
+		hookio.Debug("Python not found at %s, skipping session state init", pythonPath)
+		return
+	}
+
+	script := fmt.Sprintf(`
+import sys
+sys.path.insert(0, '%s')
+try:
+    from src.state_persistence import get_persistence
+    persistence = get_persistence()
+    persistence.init_session('%s')
+    print("Session state initialized")
+except Exception as e:
+    print(f"Session state init failed: {{e}}", file=sys.stderr)
+`, pluginRoot, sessionID)
+
+	cmd := exec.Command(pythonPath, "-c", script)
+	cmd.Dir = pluginRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		hookio.Debug("Failed to init session state: %v\n%s", err, output)
+	} else {
+		hookio.Debug("Session state initialized for %s: %s", sessionID, string(output))
+	}
+}
+
 func main() {
 	input, err := hookio.ReadInput()
 	if err != nil {
@@ -47,6 +84,9 @@ func main() {
 		}
 
 		writeEnvFile(venvPath)
+
+		// Initialize session state for persistence
+		initSessionState(pluginRoot, venvPath)
 
 		// Check DP phase for mode suggestion
 		suggestion := getDPSuggestion()
@@ -108,6 +148,9 @@ func main() {
 
 	// Write to CLAUDE_ENV_FILE
 	writeEnvFile(venvPath)
+
+	// Initialize session state for persistence
+	initSessionState(pluginRoot, venvPath)
 
 	// Emit initialization event
 	events.Emit(map[string]any{

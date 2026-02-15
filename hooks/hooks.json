@@ -6,45 +6,72 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" session-init",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/ensure-setup.ts\" --json",
+            "timeout": 30000,
+            "description": "Check RLM setup status and auto-fix if needed"
+          },
+          {
+            "type": "command",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/hook-dispatch.ts\" session-init",
             "timeout": 10000,
-            "description": "Initialize RLM environment via Go binary (venv bootstrap, DP phase awareness)"
+            "description": "Initialize RLM environment (venv bootstrap, config setup)"
           }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" complexity-check",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/hook-dispatch.ts\" complexity-check",
             "timeout": 3000,
             "description": "Classify prompt complexity for RLM activation"
           }
         ]
       },
       {
-        "matcher": ".*",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "You have access to RLM (Recursive Language Model) for complex tasks. If the user's request involves multi-file analysis, debugging complex issues, architectural decisions, or exhaustive searches, consider activating RLM with `/rlm mode balanced` or `/rlm mode thorough`. For simple tasks, RLM micro mode runs automatically. Do not mention RLM unless the task complexity warrants it.",
-            "description": "RLM activation guidance based on task complexity"
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"RLM activation triggered. Use Task tool to invoke rlm-claude-code:rlm-orchestrator immediately. This agent provides intelligent orchestration for complex multi-step tasks with context decomposition, memory persistence, and recursive reasoning.\"}}'",
+            "description": "RLM activation - trigger orchestrator agent"
           }
         ]
       }
     ],
-    "PreToolUse": [],
-    "PostToolUse": [],
-    "PreCompact": [
+    "PreToolUse": [
       {
         "matcher": ".*",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Before compaction, ensure any active RLM context (trajectory, memory state, orchestration state) has been externalized. If RLM is active, save trajectory with `/rlm save`.",
+            "type": "command",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/hook-dispatch.ts\" sync-context",
+            "timeout": 3000,
+            "description": "Sync tool context with RLM state before execution"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/hook-dispatch.ts\" capture-output",
+            "timeout": 3000,
+            "description": "Capture tool output for RLM context after execution"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreCompact\", \"additionalContext\": \"Before compaction, ensure any active RLM context (trajectory, memory state, orchestration state) has been externalized. If RLM is active, save trajectory with /rlm save.\"}}'",
             "description": "Externalize RLM context before compaction"
           }
         ]
@@ -52,13 +79,12 @@
     ],
     "Stop": [
       {
-        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" trajectory-save",
+            "command": "npx ts-node \"${CLAUDE_PLUGIN_ROOT}/scripts/npm/hook-dispatch.ts\" trajectory-save",
             "timeout": 5000,
-            "description": "Save RLM trajectory on session end via Go binary"
+            "description": "Save RLM trajectory on session end"
           }
         ]
       }
