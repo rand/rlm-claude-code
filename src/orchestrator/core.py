@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..api_client import ClaudeClient, Provider, init_client
 from ..memory_store import MemoryStore
+from ..state_persistence import StatePersistence
 
 # ============================================================================
 # Error Recovery (SPEC-12.10)
@@ -125,6 +126,7 @@ class RLMOrchestrator:
         client: ClaudeClient | None = None,
         smart_routing: bool = True,
         memory_store: MemoryStore | None = None,
+        persistence: StatePersistence | None = None,
         auto_memory: bool = True,
         error_recovery: ErrorRecoveryConfig | None = None,
         verification_config: VerificationConfig | None = None,
@@ -137,6 +139,7 @@ class RLMOrchestrator:
             client: Claude API client (creates one if None)
             smart_routing: Enable intelligent model routing based on query type
             memory_store: Optional memory store for auto-memory integration
+            persistence: Optional state persistence for cross-session state (#4)
             auto_memory: If True and memory_store provided, auto-store findings
             error_recovery: Configuration for error recovery strategies
             verification_config: Epistemic verification config (uses default if None)
@@ -148,6 +151,7 @@ class RLMOrchestrator:
         self.smart_routing = smart_routing
         self._router: SmartRouter | None = None
         self._memory_store = memory_store
+        self._persistence = persistence
         self._auto_memory = auto_memory
         self._error_recovery = error_recovery or ErrorRecoveryConfig()
         # SPEC-16.22: Epistemic verification config (always-on by default)
@@ -237,6 +241,14 @@ class RLMOrchestrator:
         )
         await trajectory.emit(start_event)
         yield start_event
+
+        # Initialize session persistence (#4 fix)
+        if self._persistence is not None:
+            import os
+
+            session_id = os.environ.get("CLAUDE_SESSION_ID", "rlm_default")
+            self._persistence.init_session(session_id)
+            self._persistence.update_rlm_active(True)
 
         # Initialize RecursiveREPL for depth management and cost tracking
         recursive_handler = RecursiveREPL(
@@ -627,6 +639,7 @@ class RLMOrchestrator:
         yield final_event
 
         # Export trajectory if enabled
+        trajectory_export_path: str | None = None
         if self.config.trajectory.export_enabled:
             import os
             import time
@@ -635,7 +648,42 @@ class RLMOrchestrator:
             export_dir = Path(os.path.expanduser(self.config.trajectory.export_path))
             export_dir.mkdir(parents=True, exist_ok=True)
             filename = f"trajectory_{int(time.time())}.json"
-            trajectory.export_json(str(export_dir / filename))
+            trajectory_export_path = str(export_dir / filename)
+            trajectory.export_json(trajectory_export_path)
+
+        # --- Post-execution persistence bridges (#4, #15 fix) ---
+
+        # 1. Update StatePersistence with trajectory data
+        if self._persistence is not None and self._persistence.current_state is not None:
+            event_count = len(trajectory.get_full_trajectory())
+            self._persistence.increment_trajectory_events(event_count)
+            if trajectory_export_path:
+                self._persistence.set_trajectory_path(trajectory_export_path)
+            self._persistence.save_state()
+
+        # 2. Bridge to ReasoningTraces (SPEC-04)
+        if self._memory_store is not None:
+            try:
+                from ..reasoning_traces import ReasoningTraces
+
+                traces = ReasoningTraces(store=self._memory_store)
+                for event in trajectory.get_full_trajectory():
+                    traces.from_trajectory_event(event)
+            except Exception:
+                pass  # Non-blocking: traces are observability
+
+        # 3. Bridge to StrategyCache (Spec §8.1)
+        if state.final_answer:
+            try:
+                from ..strategy_cache import get_strategy_cache
+                from ..trajectory_analysis import TrajectoryAnalyzer
+
+                analysis = TrajectoryAnalyzer().analyze(trajectory.get_full_trajectory())
+                cache = get_strategy_cache()
+                cache.add(query, analysis)
+                cache.save()
+            except Exception:
+                pass  # Non-blocking
 
     async def _process_deferred_operations(
         self,

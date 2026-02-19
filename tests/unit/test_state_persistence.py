@@ -90,6 +90,19 @@ class TestRLMSessionState:
         assert state.total_tokens_used == 5000
         assert state.working_memory == {"restored": True}
 
+    def test_from_dict_ignores_unknown_fields(self):
+        """from_dict tolerates unknown fields from schema drift."""
+        data = {"session_id": "test", "unknown_field": "value", "extra": 42}
+        state = RLMSessionState.from_dict(data)
+        assert state.session_id == "test"
+
+    def test_from_dict_with_missing_optional_fields(self):
+        """from_dict works with only required fields provided."""
+        state = RLMSessionState.from_dict({"session_id": "test"})
+        assert state.session_id == "test"
+        assert state.trajectory_events_count == 0
+        assert state.rlm_active is False
+
 
 class TestStatePersistence:
     """Tests for StatePersistence class."""

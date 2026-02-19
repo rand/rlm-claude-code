@@ -58,8 +58,11 @@ class RLMSessionState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RLMSessionState:
-        """Create from dictionary."""
-        return cls(**data)
+        """Create from dictionary, tolerating unknown fields."""
+        from dataclasses import fields as dc_fields
+
+        known = {f.name for f in dc_fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 class StatePersistence:
