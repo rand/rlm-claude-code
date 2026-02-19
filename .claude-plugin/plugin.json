@@ -1,7 +1,7 @@
 {
   "name": "rlm-claude-code",
   "description": "Recursive Language Model integration for Claude Code - intelligent multi-provider routing and unbounded context handling",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "author": {
     "name": "Rand",
     "url": "https://github.com/rand"
