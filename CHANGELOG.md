@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.2] - 2026-02-19
+
+### Fixed
+- **maturin 1.12 build compatibility**: Created `rlm_core/` Python stub package to satisfy `python-source = "."` config (maturin 1.12 changed missing module directory from warning to error)
+- Added PEP 561 `py.typed` marker and comprehensive `.pyi` type stubs for all PyO3-exported types (context, memory, LLM, trajectory, complexity, epistemic)
+
+### Added
+- Full IDE type support for `rlm_core` native extension (autocompletion, type checking)
+
 ## [0.7.1] - 2026-02-19
 
 ### Fixed
