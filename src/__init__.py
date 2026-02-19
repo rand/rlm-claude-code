@@ -11,7 +11,7 @@ Implements intelligent orchestration with:
 - User-configurable preferences and budgets
 """
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 # Async execution (SPEC-08.01-08.06) - from orchestrator package
 # Core orchestration

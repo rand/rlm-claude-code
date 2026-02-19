@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1] - 2026-02-19
+
+### Fixed
+- Hook dispatch silences stderr to prevent noisy output in Claude Code
+- complexity-check is now non-blocking with fail-open behavior
+- plugin.json version aligned with marketplace.json
+
 ## [0.7.0] - 2026-02-02
 
 ### Changed
