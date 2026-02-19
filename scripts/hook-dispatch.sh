@@ -96,9 +96,7 @@ if [ -f "$LEGACY_SCRIPT" ]; then
     exec python3 "$LEGACY_SCRIPT"
 fi
 
-# Nothing found
+# Nothing found - fail open to avoid blocking
 echo "Hook not found: $HOOK_NAME" >&2
-echo "Searched:" >&2
-echo "  - $BINARY" >&2
-echo "  - $PYTHON_SCRIPT" >&2
-exit 1
+echo '{"decision":"approve"}'
+exit 0

@@ -21,6 +21,7 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook-dispatch.sh\" complexity-check",
             "timeout": 3000,
+            "blocking": false,
             "description": "Classify prompt complexity for RLM activation"
           }
         ]
