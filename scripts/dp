@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Repo-local dp governance runtime.
+
+This wrapper provides deterministic `review`, `verify`, and `enforce`
+pipelines from `dp-policy.json` so governance commands do not depend on
+ambient global tooling.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class StepResult:
+    name: str
+    command: list[str]
+    exit_code: int
+    duration_ms: int
+    stdout: str
+    stderr: str
+
+    @property
+    def ok(self) -> bool:
+        return self.exit_code == 0
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _load_policy(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise RuntimeError(
+            f"Policy file not found: {path}. Create it or pass --policy with a valid path."
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Policy JSON parse failure at {path}: {exc}") from exc
+
+    pipelines = data.get("pipelines")
+    if not isinstance(pipelines, dict):
+        raise RuntimeError(
+            f"Policy {path} is missing object key 'pipelines'."
+        )
+    return data
+
+
+def _normalize_step(step: Any) -> tuple[str, list[str]]:
+    if isinstance(step, dict):
+        name = str(step.get("name") or "unnamed-step")
+        cmd = step.get("cmd")
+    else:
+        name = "step"
+        cmd = step
+
+    if not isinstance(cmd, list) or not cmd or not all(isinstance(v, str) for v in cmd):
+        raise RuntimeError(
+            f"Invalid policy step {step!r}; expected list[str] in key 'cmd'."
+        )
+    return name, list(cmd)
+
+
+def _run_step(name: str, cmd: list[str], cwd: Path) -> StepResult:
+    started = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        exit_code = proc.returncode
+        stdout = proc.stdout
+        stderr = proc.stderr
+    except FileNotFoundError as exc:
+        exit_code = 127
+        stdout = ""
+        stderr = (
+            f"Command not found: {cmd[0]!r}. "
+            "Ensure required toolchains are installed and available on PATH."
+        )
+        if exc.strerror:
+            stderr = f"{stderr} ({exc.strerror})"
+
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    return StepResult(
+        name=name,
+        command=cmd,
+        exit_code=exit_code,
+        duration_ms=duration_ms,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _run_pipeline(
+    stage: str,
+    policy_path: Path,
+    json_output: bool,
+    cwd: Path,
+) -> int:
+    policy = _load_policy(policy_path)
+    steps_raw = policy["pipelines"].get(stage)
+    if not isinstance(steps_raw, list) or not steps_raw:
+        raise RuntimeError(
+            f"No pipeline steps configured for stage '{stage}' in {policy_path}."
+        )
+
+    steps: list[StepResult] = []
+    for raw in steps_raw:
+        name, cmd = _normalize_step(raw)
+        result = _run_step(name, cmd, cwd)
+        steps.append(result)
+        if not result.ok:
+            break
+
+    ok = all(step.ok for step in steps) and len(steps) == len(steps_raw)
+    payload = {
+        "stage": stage,
+        "policy": str(policy_path),
+        "cwd": str(cwd),
+        "ok": ok,
+        "steps": [
+            {
+                **asdict(step),
+                "ok": step.ok,
+            }
+            for step in steps
+        ],
+    }
+
+    if json_output:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"dp {stage}: {'PASS' if ok else 'FAIL'}")
+        for step in steps:
+            cmd = " ".join(step.command)
+            print(
+                f"- {step.name}: exit={step.exit_code} duration_ms={step.duration_ms} cmd={cmd}"
+            )
+            if step.stdout.strip():
+                print(step.stdout.rstrip())
+            if step.stderr.strip():
+                print(step.stderr.rstrip(), file=sys.stderr)
+
+    if ok:
+        return 0
+    failed = next((step for step in steps if not step.ok), None)
+    return failed.exit_code if failed is not None and failed.exit_code != 0 else 1
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="dp")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    review = sub.add_parser("review", help="Run review pipeline")
+    review.add_argument("--policy", default="dp-policy.json")
+    review.add_argument("--json", action="store_true")
+
+    verify = sub.add_parser("verify", help="Run verify pipeline")
+    verify.add_argument("--policy", default="dp-policy.json")
+    verify.add_argument("--json", action="store_true")
+
+    enforce = sub.add_parser("enforce", help="Run enforcement pipeline")
+    enforce.add_argument("stage", choices=["pre-commit", "pre-push"])
+    enforce.add_argument("--policy", default="dp-policy.json")
+    enforce.add_argument("--json", action="store_true")
+
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv or sys.argv[1:])
+    repo = _repo_root()
+    cwd = Path(os.environ.get("LOOP_REPO_ROOT", str(repo))).resolve()
+    policy = Path(args.policy)
+    if not policy.is_absolute():
+        policy = cwd / policy
+
+    try:
+        if args.command == "review":
+            return _run_pipeline("review", policy, args.json, cwd)
+        if args.command == "verify":
+            return _run_pipeline("verify", policy, args.json, cwd)
+        if args.command == "enforce":
+            return _run_pipeline(args.stage, policy, args.json, cwd)
+        raise RuntimeError(f"Unsupported command: {args.command}")
+    except RuntimeError as exc:
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "command": args.command,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(f"dp error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

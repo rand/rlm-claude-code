@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "description": "Bootstrap governance pipelines for rlm-claude-code using currently stable local checks.",
+  "pipelines": {
+    "review": [
+      {
+        "name": "tooling-sanity",
+        "cmd": ["uv", "run", "--extra", "dev", "pytest", "--version"]
+      },
+      {
+        "name": "representative-unit-slice",
+        "cmd": ["uv", "run", "--extra", "dev", "pytest", "-q", "tests/unit/test_repl_environment.py"]
+      }
+    ],
+    "verify": [
+      {
+        "name": "representative-unit-slice",
+        "cmd": ["uv", "run", "--extra", "dev", "pytest", "-q", "tests/unit/test_repl_environment.py"]
+      }
+    ],
+    "pre-commit": [
+      {
+        "name": "representative-unit-slice",
+        "cmd": ["uv", "run", "--extra", "dev", "pytest", "-q", "tests/unit/test_repl_environment.py"]
+      }
+    ],
+    "pre-push": [
+      {
+        "name": "representative-unit-slice",
+        "cmd": ["uv", "run", "--extra", "dev", "pytest", "-q", "tests/unit/test_repl_environment.py"]
+      }
+    ]
+  }
+}
