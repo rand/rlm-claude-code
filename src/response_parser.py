@@ -41,7 +41,10 @@ class ResponseParser:
     # Patterns for extracting content
     PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.DOTALL)
     FINAL_ANSWER = re.compile(r"FINAL:\s*(.+?)(?:\n\n|\Z)", re.DOTALL)
+    FINAL_ANSWER_CALL = re.compile(r"FINAL\(\s*(.+?)\s*\)(?:\n\n|\Z)", re.DOTALL)
     FINAL_VAR = re.compile(r"FINAL_VAR:\s*(\w+)")
+    FINAL_VAR_CALL = re.compile(r"FINAL_VAR\(\s*(\w+)\s*\)")
+    SUBMIT_CALL = re.compile(r"^\s*SUBMIT\s*\(.*\)\s*$", re.DOTALL)
 
     def parse(self, response: str) -> list[ParsedResponse]:
         """
@@ -56,7 +59,7 @@ class ResponseParser:
         results: list[ParsedResponse] = []
 
         # Check for FINAL answer first (highest priority)
-        final_match = self.FINAL_ANSWER.search(response)
+        final_match = self._find_first_match(response, [self.FINAL_ANSWER, self.FINAL_ANSWER_CALL])
         if final_match:
             # Extract reasoning before FINAL
             reasoning = response[: final_match.start()].strip()
@@ -70,7 +73,7 @@ class ResponseParser:
             return results
 
         # Check for FINAL_VAR
-        var_match = self.FINAL_VAR.search(response)
+        var_match = self._find_first_match(response, [self.FINAL_VAR, self.FINAL_VAR_CALL])
         if var_match:
             reasoning = response[: var_match.start()].strip()
             results.append(
@@ -78,6 +81,18 @@ class ResponseParser:
                     action=ResponseAction.FINAL_VAR,
                     content=var_match.group(1),
                     reasoning=reasoning,
+                )
+            )
+            return results
+
+        # Typed-submit flow: allow bare SUBMIT(...) without requiring code fences
+        # so orchestrator can execute and consume structured submit_result.
+        if self.SUBMIT_CALL.match(response.strip()):
+            results.append(
+                ParsedResponse(
+                    action=ResponseAction.REPL_EXECUTE,
+                    content=response.strip(),
+                    reasoning="",
                 )
             )
             return results
@@ -113,6 +128,18 @@ class ResponseParser:
 
         return results
 
+    @staticmethod
+    def _find_first_match(response: str, patterns: list[re.Pattern[str]]) -> re.Match[str] | None:
+        """Return the earliest regex match across multiple patterns."""
+        best_match: re.Match[str] | None = None
+        for pattern in patterns:
+            match = pattern.search(response)
+            if match is None:
+                continue
+            if best_match is None or match.start() < best_match.start():
+                best_match = match
+        return best_match
+
     def extract_code_blocks(self, response: str) -> list[str]:
         """
         Extract all Python code blocks from response.
@@ -127,7 +154,12 @@ class ResponseParser:
 
     def has_final_answer(self, response: str) -> bool:
         """Check if response contains a final answer."""
-        return bool(self.FINAL_ANSWER.search(response) or self.FINAL_VAR.search(response))
+        return bool(
+            self.FINAL_ANSWER.search(response)
+            or self.FINAL_ANSWER_CALL.search(response)
+            or self.FINAL_VAR.search(response)
+            or self.FINAL_VAR_CALL.search(response)
+        )
 
     def extract_final_answer(self, response: str) -> str | None:
         """
@@ -139,11 +171,11 @@ class ResponseParser:
         Returns:
             Final answer string or None
         """
-        match = self.FINAL_ANSWER.search(response)
+        match = self._find_first_match(response, [self.FINAL_ANSWER, self.FINAL_ANSWER_CALL])
         if match:
             return match.group(1).strip()
 
-        match = self.FINAL_VAR.search(response)
+        match = self._find_first_match(response, [self.FINAL_VAR, self.FINAL_VAR_CALL])
         if match:
             return f"[Variable: {match.group(1)}]"
 

@@ -62,6 +62,17 @@ try:
         VerificationStats,
         VerificationVerdict,
     )
+
+    # Optional adversarial compatibility exports.
+    try:
+        from rlm_core.rlm_core import (
+            AdversarialConfig,
+            IssueSeverity,
+            ValidationContext,
+            ValidationResult,
+        )
+    except ImportError:
+        pass
 except ImportError as _e:
     _msg = (
         "rlm_core native extension is not available. "
@@ -70,6 +81,8 @@ except ImportError as _e:
         f"Original error: {_e}"
     )
     raise ImportError(_msg) from _e
+
+__version__ = "0.1.0"
 
 __all__ = [
     # Functions
@@ -123,3 +136,13 @@ __all__ = [
     "VerificationStats",
     "VerificationVerdict",
 ]
+
+if "AdversarialConfig" in globals():
+    __all__.extend(
+        [
+            "AdversarialConfig",
+            "ValidationContext",
+            "ValidationResult",
+            "IssueSeverity",
+        ]
+    )

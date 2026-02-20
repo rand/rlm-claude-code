@@ -175,6 +175,16 @@ class RLMOrchestrator:
             self._router = SmartRouter(available_providers=available)
         return self._router
 
+    @staticmethod
+    def _final_answer_from_submit(submit_result: dict[str, Any]) -> str:
+        """Extract a display-ready final answer from SUBMIT result payload."""
+        outputs = submit_result.get("outputs")
+        if isinstance(outputs, dict):
+            if "answer" in outputs:
+                return str(outputs["answer"])
+            return json.dumps(outputs, indent=2, default=str)
+        return str(outputs)
+
     async def run(
         self, query: str, context: SessionContext
     ) -> AsyncIterator[TrajectoryEvent | str]:
@@ -374,9 +384,14 @@ class RLMOrchestrator:
 
                     # Execute code synchronously - async ops become DeferredOperations
                     exec_result = repl.execute(code)
-                    repl_result = (
-                        exec_result.output if exec_result.success else f"Error: {exec_result.error}"
-                    )
+                    submit_result = exec_result.submit_result
+                    if submit_result is not None and submit_result.get("status") == "success":
+                        repl_result = submit_result.get("outputs")
+                        state.final_answer = self._final_answer_from_submit(submit_result)
+                    else:
+                        repl_result = (
+                            exec_result.output if exec_result.success else f"Error: {exec_result.error}"
+                        )
 
                     # Process any deferred async operations
                     if repl.has_pending_operations():
@@ -415,6 +430,9 @@ class RLMOrchestrator:
                     )
                     await trajectory.emit(result_event)
                     yield result_event
+
+                    if state.final_answer:
+                        break
 
                     # Add to conversation
                     state.messages.append({"role": "assistant", "content": response.content})
@@ -727,35 +745,58 @@ class RLMOrchestrator:
                 "individual_ops": len(ops),
                 "batch_ops": sum(len(b.operations) for b in batches),
                 "batch_count": len(batches),
+                "max_concurrent": 5,
+                "max_attempts": 2,
             },
         )
         await trajectory.emit(start_event)
         yield start_event
 
-        # Bounded parallel execution with Semaphore(5)
-        semaphore = asyncio.Semaphore(5)
+        # Bounded parallel execution with deterministic retry policy.
+        max_concurrent = 5
+        max_attempts = 2
+        retry_backoff_s = 0.05
+        semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def execute_op_bounded(op: DeferredOperation) -> tuple[str, str]:
-            """Execute operation with bounded concurrency."""
+        async def execute_op_bounded(op: DeferredOperation) -> tuple[str, Any, dict[str, Any]]:
+            """Execute one deferred operation with bounded concurrency + retries."""
             async with semaphore:
-                try:
-                    if recursive_handler:
-                        result = await recursive_handler.recursive_query(
-                            query=op.query,
-                            context=op.context,
-                            spawn_repl=op.spawn_repl,
-                        )
-                    else:
-                        result = await client.recursive_query(op.query, op.context)
-                    return op.operation_id, result
-                except Exception as e:
-                    return op.operation_id, f"[Error: {e}]"
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        if recursive_handler:
+                            result = await recursive_handler.recursive_query(
+                                query=op.query,
+                                context=op.context,
+                                spawn_repl=op.spawn_repl,
+                            )
+                        else:
+                            result = await client.recursive_query(op.query, op.context)
+                        return op.operation_id, result, {"status": "success", "attempts": attempt}
+                    except Exception as e:
+                        if attempt >= max_attempts:
+                            return op.operation_id, f"[Error: {e}]", {
+                                "status": "error",
+                                "attempts": attempt,
+                                "error": str(e),
+                            }
+                        await asyncio.sleep(retry_backoff_s * attempt)
 
         # Execute all operations in parallel with bounded concurrency
         results = await asyncio.gather(*[execute_op_bounded(op) for op in all_ops])
 
-        # Build result map
-        result_map: dict[str, str] = dict(results)
+        # Build result and telemetry maps
+        op_lookup = {op.operation_id: op for op in all_ops}
+        result_map: dict[str, Any] = {}
+        op_telemetry: list[dict[str, Any]] = []
+        for op_id, result, status in results:
+            result_map[op_id] = result
+            op_telemetry.append(
+                {
+                    "operation_id": op_id,
+                    "operation_type": op_lookup[op_id].operation_type,
+                    **status,
+                }
+            )
 
         # Resolve individual operations
         for op in ops:
@@ -770,9 +811,18 @@ class RLMOrchestrator:
             repl.resolve_batch(batch.batch_id, batch_results)
 
         # Emit completion event with cost summary
+        failed = sum(1 for op in op_telemetry if op["status"] == "error")
+        succeeded = len(op_telemetry) - failed
+        retried = sum(1 for op in op_telemetry if op.get("attempts", 1) > 1)
         metadata: dict[str, Any] = {
             "total_operations": total_ops,
             "completed": len(results),
+            "succeeded": succeeded,
+            "failed": failed,
+            "retried": retried,
+            "max_concurrent": max_concurrent,
+            "max_attempts": max_attempts,
+            "operations": op_telemetry,
         }
         if recursive_handler:
             metadata["cost_summary"] = recursive_handler.get_cost_summary()

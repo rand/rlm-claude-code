@@ -131,6 +131,7 @@ class ExecutionResult:
         stdout: Captured print() output (separate from return value)
         output_truncated: Whether output was truncated
         original_length: Original length before truncation (if truncated)
+        submit_result: Structured SUBMIT() result for typed-signature flows
     """
 
     success: bool
@@ -140,6 +141,7 @@ class ExecutionResult:
     stdout: str = ""
     output_truncated: bool = False
     original_length: int | None = None
+    submit_result: dict[str, Any] | None = None
 
     def format_output(self, max_length: int = 2000) -> str:
         """

@@ -14,7 +14,7 @@ CMDS := session-init complexity-check trajectory-save
 # Platforms to build for
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: all dev clean test lint help
+.PHONY: all dev clean test lint help rcc-contract-baseline rcc-contract-gate rcc-contract-test
 
 # Default: build for current platform
 dev:
@@ -68,6 +68,9 @@ help:
 	@echo "  all          - Build for all platforms"
 	@echo "  test         - Run tests"
 	@echo "  lint         - Run linter"
+	@echo "  rcc-contract-baseline - Generate A1-A5 compatibility artifact set"
+	@echo "  rcc-contract-gate     - Run A1-A5 compatibility gate (strict)"
+	@echo "  rcc-contract-test     - Run A1-A5 probe test suite"
 	@echo "  clean        - Remove built binaries"
 	@echo "  install-tools - Install development tools"
 	@echo ""
@@ -79,3 +82,17 @@ help:
 test-hooks: dev
 	@echo "Testing session-init..."
 	@echo '{"session_id":"test","source":"startup"}' | HOOK_DEBUG=1 ./bin/session-init || true
+
+# Generate A1-A5 compatibility evidence artifact
+rcc-contract-baseline:
+	@OUT_DIR="docs/process/evidence/$$(date -u +%F)/rcc-baseline"; \
+	echo "Writing RCC baseline to $$OUT_DIR"; \
+	UV_CACHE_DIR=.uv-cache uv run python scripts/rcc_contract_probe.py --output-dir "$$OUT_DIR"
+
+# Strict A1-A5 compatibility gate (non-zero on any invariant failure)
+rcc-contract-gate:
+	UV_CACHE_DIR=.uv-cache uv run python scripts/rcc_contract_probe.py --strict
+
+# A1-A5 contract probe test suite
+rcc-contract-test:
+	UV_CACHE_DIR=.uv-cache uv run --extra dev pytest -q tests/unit/test_rcc_contract_probe.py

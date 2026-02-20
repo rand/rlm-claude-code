@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 import time
+import warnings
 from typing import TYPE_CHECKING, Any, Literal
 
 from RestrictedPython import compile_restricted, safe_builtins
@@ -44,8 +45,10 @@ MICRO_MODE_BLOCKED = frozenset(
         "recursive_llm",
         "recursive_query",
         "llm_batch",
+        "llm_query_batched",
         "summarize",  # Uses LLM
         "map_reduce",
+        "SUBMIT",
         "find_relevant",  # Can use LLM scoring
         "verify_claim",  # Uses LLM for verification
         "evidence_dependence",  # Uses LLM for consistency checking
@@ -77,6 +80,12 @@ BLOCKED_BUILTINS = frozenset(
 
 class RLMSecurityError(Exception):
     """Raised when sandbox security is violated."""
+
+    pass
+
+
+class SubmitSignal(BaseException):
+    """Internal control-flow signal to stop execution after SUBMIT()."""
 
     pass
 
@@ -190,6 +199,9 @@ class RLMEnvironment:
         self.pending_operations: list[DeferredOperation] = []
         self.pending_batches: list[DeferredBatch] = []
         self._operation_counter = 0
+        self._signature_registration: dict[str, Any] | None = None
+        self._submit_result: dict[str, Any] | None = None
+        self._submit_count = 0
 
         # Memory store (initialized via enable_memory())
         self._memory_store: MemoryStore | None = None
@@ -314,6 +326,10 @@ class RLMEnvironment:
             self.globals["recursive_llm"] = self._recursive_query
             self.globals["llm"] = self._recursive_query  # Shorthand alias
             self.globals["llm_batch"] = self._llm_batch  # Parallel LLM calls
+            # Compatibility alias (migration window)
+            self.globals["llm_query_batched"] = self._llm_query_batched
+            # Typed-submit helper
+            self.globals["SUBMIT"] = self._submit
             # Advanced REPL functions (SPEC-01)
             self.globals["map_reduce"] = self._map_reduce
             self.globals["find_relevant"] = self._find_relevant
@@ -487,6 +503,7 @@ class RLMEnvironment:
         print_collector = _REPLPrintCollector(output_capture)
         self.globals["_print"] = print_collector
         self.globals["_print_"] = lambda _: print_collector
+        self._reset_submit_state()
 
         try:
             result = None
@@ -549,6 +566,50 @@ class RLMEnvironment:
                 execution_time_ms=execution_time,
             )
 
+        except SubmitSignal:
+            execution_time = (time.time() - start_time) * 1000
+            submit_result = self.consume_submit_result()
+            stdout = "\n".join(output_capture) if output_capture else ""
+
+            if submit_result and submit_result.get("status") == "validation_error":
+                error_msg = self._submit_error_message(submit_result)
+                self.history.append(
+                    {
+                        "code": code,
+                        "success": False,
+                        "error": error_msg,
+                        "submit_result": submit_result,
+                        "stdout": stdout,
+                        "time_ms": execution_time,
+                    }
+                )
+                return ExecutionResult(
+                    success=False,
+                    error=error_msg,
+                    stdout=stdout,
+                    execution_time_ms=execution_time,
+                    submit_result=submit_result,
+                )
+
+            outputs = submit_result.get("outputs") if submit_result else None
+            self.history.append(
+                {
+                    "code": code,
+                    "success": True,
+                    "output": outputs,
+                    "submit_result": submit_result,
+                    "stdout": stdout,
+                    "time_ms": execution_time,
+                }
+            )
+            return ExecutionResult(
+                success=True,
+                output=outputs,
+                stdout=stdout,
+                execution_time_ms=execution_time,
+                submit_result=submit_result,
+            )
+
         except Exception as e:
             execution_time = (time.time() - start_time) * 1000
 
@@ -572,6 +633,315 @@ class RLMEnvironment:
             )
         finally:
             self._print_buffer = []
+
+    def register_signature(self, registration: dict[str, Any]) -> dict[str, bool]:
+        """
+        Register output signature metadata used for SUBMIT validation.
+
+        The expected payload shape mirrors loop's REPL protocol:
+        {
+            "output_fields": [
+                {
+                    "name": "answer",
+                    "field_type": {"type": "string"},
+                    "required": true
+                }
+            ],
+            "signature_name": "OptionalName"
+        }
+        """
+        if not isinstance(registration, dict):
+            raise TypeError("registration must be a dict")
+
+        output_fields = registration.get("output_fields")
+        if not isinstance(output_fields, list):
+            raise ValueError("registration.output_fields must be a list")
+
+        for index, field in enumerate(output_fields):
+            if not isinstance(field, dict):
+                raise ValueError(f"registration.output_fields[{index}] must be a dict")
+            if "name" not in field or not field["name"]:
+                raise ValueError(f"registration.output_fields[{index}] missing required 'name'")
+            if "field_type" not in field or not isinstance(field["field_type"], dict):
+                raise ValueError(
+                    f"registration.output_fields[{index}] missing required 'field_type' dict"
+                )
+
+        replaced = self._signature_registration is not None
+        self._signature_registration = registration
+        return {"success": True, "signature_registered": True, "replaced": replaced}
+
+    def clear_signature(self) -> dict[str, bool]:
+        """Clear any previously registered signature."""
+        had_signature = self._signature_registration is not None
+        self._signature_registration = None
+        return {"success": True, "cleared": had_signature}
+
+    def consume_submit_result(self) -> dict[str, Any] | None:
+        """Return and clear the latest submit result for current execution."""
+        result = self._submit_result
+        self._submit_result = None
+        return result
+
+    def _reset_submit_state(self) -> None:
+        self._submit_result = None
+        self._submit_count = 0
+
+    def _submit(self, outputs: Any) -> None:
+        """SUBMIT callable exposed inside REPL code."""
+        serialized_outputs = self._serialize_submit_value(outputs)
+        self._submit_count += 1
+
+        if self._submit_count > 1:
+            self._submit_result = {
+                "status": "validation_error",
+                "errors": [{"error_type": "multiple_submits", "count": self._submit_count}],
+                "original_outputs": serialized_outputs,
+            }
+            raise SubmitSignal()
+
+        if self._signature_registration is None:
+            self._submit_result = {
+                "status": "validation_error",
+                "errors": [{"error_type": "no_signature_registered"}],
+                "original_outputs": serialized_outputs,
+            }
+            raise SubmitSignal()
+
+        errors = self._validate_submit_outputs(serialized_outputs)
+        if errors:
+            self._submit_result = {
+                "status": "validation_error",
+                "errors": errors,
+                "original_outputs": serialized_outputs,
+            }
+        else:
+            self._submit_result = {
+                "status": "success",
+                "outputs": serialized_outputs,
+            }
+        raise SubmitSignal()
+
+    def _validate_submit_outputs(self, outputs: Any) -> list[dict[str, Any]]:
+        errors: list[dict[str, Any]] = []
+
+        if not isinstance(outputs, dict):
+            return [
+                {
+                    "error_type": "validation_failed",
+                    "field": "",
+                    "reason": "SUBMIT outputs must be an object",
+                }
+            ]
+
+        output_fields = self._signature_registration.get("output_fields", [])
+        for field_spec in output_fields:
+            field_name = field_spec.get("name", "")
+            field_type = field_spec.get("field_type", {"type": "custom", "value": "unknown"})
+            required = field_spec.get("required", True)
+
+            if required and field_name not in outputs:
+                errors.append(
+                    {
+                        "error_type": "missing_field",
+                        "field": field_name,
+                        "expected_type": field_type,
+                    }
+                )
+                continue
+
+            if field_name in outputs:
+                self._validate_field_value(field_name, field_type, outputs[field_name], errors)
+
+        return errors
+
+    def _validate_field_value(
+        self,
+        field_name: str,
+        field_type: dict[str, Any],
+        value: Any,
+        errors: list[dict[str, Any]],
+    ) -> None:
+        type_tag = field_type.get("type")
+
+        if type_tag == "string":
+            if not isinstance(value, str):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+            return
+
+        if type_tag == "integer":
+            if not isinstance(value, int) or isinstance(value, bool):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+            return
+
+        if type_tag in {"float", "number"}:
+            if (not isinstance(value, (int, float))) or isinstance(value, bool):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+            return
+
+        if type_tag == "boolean":
+            if not isinstance(value, bool):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+            return
+
+        if type_tag == "enum":
+            allowed = field_type.get("value", [])
+            if not isinstance(value, str):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+            elif value not in allowed:
+                errors.append(
+                    {
+                        "error_type": "enum_invalid",
+                        "field": field_name,
+                        "value": value,
+                        "allowed": allowed,
+                    }
+                )
+            return
+
+        if type_tag == "list":
+            inner_type = field_type.get("value", {"type": "custom", "value": "unknown"})
+            if not isinstance(value, list):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+                return
+            for index, item in enumerate(value):
+                self._validate_field_value(f"{field_name}[{index}]", inner_type, item, errors)
+            return
+
+        if type_tag == "object":
+            nested_fields = field_type.get("value", [])
+            if not isinstance(value, dict):
+                self._append_type_mismatch(errors, field_name, field_type, value)
+                return
+            for nested in nested_fields:
+                nested_name = nested.get("name", "")
+                nested_type = nested.get("field_type", {"type": "custom", "value": "unknown"})
+                nested_required = nested.get("required", True)
+                nested_path = f"{field_name}.{nested_name}" if nested_name else field_name
+
+                if nested_required and nested_name not in value:
+                    errors.append(
+                        {
+                            "error_type": "missing_field",
+                            "field": nested_path,
+                            "expected_type": nested_type,
+                        }
+                    )
+                    continue
+
+                if nested_name in value:
+                    self._validate_field_value(
+                        nested_path,
+                        nested_type,
+                        value[nested_name],
+                        errors,
+                    )
+            return
+
+        if type_tag == "custom":
+            return
+
+        errors.append(
+            {
+                "error_type": "validation_failed",
+                "field": field_name,
+                "reason": f"Unknown field type: {type_tag}",
+            }
+        )
+
+    @staticmethod
+    def _append_type_mismatch(
+        errors: list[dict[str, Any]],
+        field_name: str,
+        expected_type: dict[str, Any],
+        value: Any,
+    ) -> None:
+        errors.append(
+            {
+                "error_type": "type_mismatch",
+                "field": field_name,
+                "expected": expected_type,
+                "got": RLMEnvironment._type_name(value),
+                "value_preview": RLMEnvironment._preview_value(value),
+            }
+        )
+
+    @staticmethod
+    def _serialize_submit_value(value: Any) -> Any:
+        """Serialize values to JSON-compatible structures for submit payloads."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [RLMEnvironment._serialize_submit_value(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): RLMEnvironment._serialize_submit_value(v) for k, v in value.items()}
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+        if hasattr(value, "__dict__"):
+            return {
+                k: RLMEnvironment._serialize_submit_value(v)
+                for k, v in value.__dict__.items()
+                if not k.startswith("_")
+            }
+        return str(value)
+
+    @staticmethod
+    def _preview_value(value: Any, limit: int = 100) -> str:
+        """Create a bounded preview string for validation errors."""
+        text = repr(value)
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3] + "..."
+
+    @staticmethod
+    def _type_name(value: Any) -> str:
+        """Get the normalized type name used in validation errors."""
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int):
+            return "integer"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "array"
+        if isinstance(value, dict):
+            return "object"
+        return type(value).__name__
+
+    @staticmethod
+    def _submit_error_message(submit_result: dict[str, Any]) -> str:
+        errors = submit_result.get("errors", [])
+        if not errors:
+            return "SUBMIT validation failed"
+
+        first = errors[0]
+        error_type = first.get("error_type")
+        if error_type == "no_signature_registered":
+            return "SUBMIT called but no signature was registered"
+        if error_type == "missing_field":
+            field = first.get("field", "<unknown>")
+            return f"SUBMIT missing required field '{field}'"
+        if error_type == "type_mismatch":
+            field = first.get("field", "<unknown>")
+            expected = first.get("expected", {})
+            expected_type = expected.get("type", "unknown")
+            got = first.get("got", "unknown")
+            return f"SUBMIT field '{field}' expected {expected_type}, got {got}"
+        if error_type == "multiple_submits":
+            count = first.get("count", 0)
+            return f"SUBMIT called multiple times ({count})"
+        if error_type == "enum_invalid":
+            field = first.get("field", "<unknown>")
+            value = first.get("value", "<unknown>")
+            return f"SUBMIT field '{field}' has invalid enum value '{value}'"
+        if error_type == "validation_failed":
+            reason = first.get("reason", "unknown validation error")
+            return f"SUBMIT validation failed: {reason}"
+        return "SUBMIT validation failed"
 
     def _safe_print(self, *args: Any, **_kwargs: Any) -> None:
         """Capture print output instead of writing to stdout."""
@@ -877,6 +1247,42 @@ class RLMEnvironment:
             batch.operations.append(op)
 
         self.pending_batches.append(batch)
+        return batch
+
+    def _llm_query_batched(
+        self,
+        prompts: list[str],
+        contexts: list[str] | None = None,
+        max_parallel: int = 5,
+        model: str | None = None,
+        max_tokens: int = 1024,
+        spawn_repl: bool = False,
+    ) -> DeferredBatch:
+        """
+        Compatibility alias for batched LLM queries.
+
+        Canonical helper remains `llm_batch`; this alias exists for migration
+        windows where consumers still call `llm_query_batched`.
+        """
+        warnings.warn(
+            "llm_query_batched() is deprecated; use llm_batch() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if contexts is not None and len(contexts) != len(prompts):
+            raise ValueError("contexts must have same length as prompts")
+
+        query_pairs: list[tuple[str, Any]] = []
+        for idx, prompt in enumerate(prompts):
+            context = contexts[idx] if contexts is not None else None
+            query_pairs.append((prompt, context))
+
+        batch = self._llm_batch(query_pairs, spawn_repl=spawn_repl)
+        # Preserve extra metadata for host-side compatibility and observability.
+        batch.metadata["alias"] = "llm_query_batched"
+        batch.metadata["max_parallel"] = max_parallel
+        batch.metadata["model"] = model
+        batch.metadata["max_tokens"] = max_tokens
         return batch
 
     def _map_reduce(

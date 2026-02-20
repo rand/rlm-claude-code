@@ -1,6 +1,7 @@
 """Type stubs for the rlm_core native extension module."""
 
 from __future__ import annotations
+from enum import IntEnum
 
 # Re-export everything from submodules for flat access
 from rlm_core._context import Message as Message
@@ -42,8 +43,21 @@ from rlm_core._epistemic import VerificationConfig as VerificationConfig
 from rlm_core._epistemic import VerificationStats as VerificationStats
 from rlm_core._epistemic import VerificationVerdict as VerificationVerdict
 
+__version__: str
+
 def version() -> str: ...
 def version_tuple() -> tuple[int, int, int]: ...
 def has_feature(feature_name: str) -> bool: ...
 def available_features() -> list[str]: ...
 def quick_hallucination_check(response: str) -> float: ...
+
+class IssueSeverity(IntEnum):
+    Critical = 0
+    High = 1
+    Medium = 2
+    Low = 3
+    Info = 4
+
+class ValidationContext: ...
+class ValidationResult: ...
+class AdversarialConfig: ...

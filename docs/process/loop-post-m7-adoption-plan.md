@@ -161,6 +161,7 @@ Deliverables:
 - Repo-specific rollout + rollback playbook for loop pin upgrades.
 - Required gate checklist for release.
 - Ongoing maintenance cadence ownership and schedule.
+- Runbook location: `/Users/rand/src/rlm-claude-code/docs/process/loop-upgrade-runbook.md`.
 
 Exit criteria:
 - runbook is complete and executable,

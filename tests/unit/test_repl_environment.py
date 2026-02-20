@@ -5,6 +5,7 @@ Implements: Spec §4 tests
 """
 
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -560,6 +561,117 @@ class TestDeferredOperations:
         ops, _ = basic_env.get_pending_operations()
         assert len(ops) == 1
         assert ops[0].query == "What is 2+2?"
+
+
+class TestSubmitProtocol:
+    """Tests for typed SUBMIT() protocol compatibility."""
+
+    @staticmethod
+    def _signature_params():
+        return {
+            "output_fields": [
+                {
+                    "name": "answer",
+                    "field_type": {"type": "string"},
+                    "required": True,
+                }
+            ],
+            "signature_name": "AnswerSig",
+        }
+
+    def test_register_and_clear_signature(self, basic_env):
+        """Signature registration lifecycle mirrors loop semantics."""
+        register = basic_env.register_signature(self._signature_params())
+
+        assert register["success"] is True
+        assert register["signature_registered"] is True
+        assert register["replaced"] is False
+
+        clear = basic_env.clear_signature()
+        assert clear["success"] is True
+        assert clear["cleared"] is True
+
+        clear_again = basic_env.clear_signature()
+        assert clear_again["success"] is True
+        assert clear_again["cleared"] is False
+
+    def test_submit_without_signature_returns_validation_error(self, basic_env):
+        """SUBMIT without signature yields structured validation error."""
+        result = basic_env.execute("SUBMIT({'answer': 'test'})")
+
+        assert result.success is False
+        assert "no signature" in (result.error or "").lower()
+        assert result.submit_result is not None
+        assert result.submit_result["status"] == "validation_error"
+        assert result.submit_result["errors"][0]["error_type"] == "no_signature_registered"
+
+    def test_submit_with_registered_signature_succeeds(self, basic_env):
+        """SUBMIT with matching payload succeeds and returns outputs."""
+        basic_env.register_signature(self._signature_params())
+        result = basic_env.execute("SUBMIT({'answer': 'test'})")
+
+        assert result.success is True
+        assert result.submit_result is not None
+        assert result.submit_result["status"] == "success"
+        assert result.submit_result["outputs"]["answer"] == "test"
+
+    def test_submit_missing_required_field_fails(self, basic_env):
+        """Missing required output field yields structured error."""
+        basic_env.register_signature(self._signature_params())
+        result = basic_env.execute("SUBMIT({})")
+
+        assert result.success is False
+        assert result.submit_result is not None
+        assert result.submit_result["status"] == "validation_error"
+        assert result.submit_result["errors"][0]["error_type"] == "missing_field"
+        assert result.submit_result["errors"][0]["field"] == "answer"
+
+    def test_submit_type_mismatch_fails(self, basic_env):
+        """Type mismatch in SUBMIT payload yields structured error."""
+        basic_env.register_signature(self._signature_params())
+        result = basic_env.execute("SUBMIT({'answer': 42})")
+
+        assert result.success is False
+        assert result.submit_result is not None
+        assert result.submit_result["status"] == "validation_error"
+        assert result.submit_result["errors"][0]["error_type"] == "type_mismatch"
+        assert result.submit_result["errors"][0]["field"] == "answer"
+
+    def test_multiple_submit_calls_report_multiple_submits(self, basic_env):
+        """Calling SUBMIT multiple times in one execution is rejected."""
+        basic_env.register_signature(self._signature_params())
+
+        code = """
+try:
+    SUBMIT({'answer': 'first'})
+except BaseException:
+    pass
+SUBMIT({'answer': 'second'})
+"""
+        result = basic_env.execute(code)
+
+        assert result.success is False
+        assert result.submit_result is not None
+        assert result.submit_result["status"] == "validation_error"
+        assert result.submit_result["errors"][0]["error_type"] == "multiple_submits"
+        assert result.submit_result["errors"][0]["count"] == 2
+
+    def test_llm_query_batched_alias_delegates_to_llm_batch(self, basic_env):
+        """Migration alias remains callable and maps to batched deferred ops."""
+        assert "llm_query_batched" in basic_env.globals
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", DeprecationWarning)
+            batch = basic_env._llm_query_batched(["q1", "q2"], contexts=["c1", "c2"])
+
+        assert len(batch.operations) == 2
+        assert batch.metadata["alias"] == "llm_query_batched"
+        assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+    def test_llm_query_batched_alias_validates_context_lengths(self, basic_env):
+        """Alias enforces prompts/contexts length parity."""
+        with pytest.raises(ValueError, match="same length"):
+            basic_env._llm_query_batched(["q1", "q2"], contexts=["c1"])
 
 
 # ============================================================================
