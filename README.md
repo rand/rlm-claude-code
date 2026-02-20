@@ -80,7 +80,7 @@ uv venv && uv sync
 "$PLUGIN_DIR/.venv/bin/python" -c "import rlm_core; print('rlm_core OK:', rlm_core.version())"
 ```
 
-#### Step 4: Verify Installation
+#### Step 3: Verify Installation
 
 Restart Claude Code. You should see "RLM initialized" on startup.
 
