@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.4] - 2026-02-20
+
+### Fixed
+- Remove `type: "prompt"` hook from UserPromptSubmit that caused small-model gate to block legitimate user prompts with "Operation stopped by hook" errors
+- Resolve all ty type checker diagnostics (4) and ruff linter errors (19) for clean static analysis
+
+### Changed
+- UserPromptSubmit now uses only the `complexity-check` command hook (no prompt-type gate)
+
 ## [0.7.3] - 2026-02-20
 
 ### Added

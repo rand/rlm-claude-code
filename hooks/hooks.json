@@ -25,16 +25,6 @@
             "description": "Classify prompt complexity for RLM activation"
           }
         ]
-      },
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "You have access to RLM (Recursive Language Model) for complex tasks. If the user's request involves multi-file analysis, debugging complex issues, architectural decisions, or exhaustive searches, consider activating RLM with `/rlm mode balanced` or `/rlm mode thorough`. For simple tasks, RLM micro mode runs automatically. Do not mention RLM unless the task complexity warrants it.",
-            "description": "RLM activation guidance based on task complexity"
-          }
-        ]
       }
     ],
     "PreToolUse": [],
