@@ -55,7 +55,7 @@ class TestActivationConfig:
         assert config.complexity_score_threshold == 3
 
     def test_mode_options(self):
-        """All mode options are valid."""
+        """SPEC-14.12: ActivationConfig supports all documented modes."""
         for mode in ["micro", "complexity", "always", "manual", "token"]:
             config = ActivationConfig(mode=mode)
             assert config.mode == mode

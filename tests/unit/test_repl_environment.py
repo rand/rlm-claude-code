@@ -5,7 +5,9 @@ Implements: Spec §4 tests
 """
 
 import sys
+import time
 import warnings
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 import pytest
@@ -690,14 +692,14 @@ class TestMicroMode:
         return create_micro_environment(basic_context, use_restricted=False)
 
     def test_micro_mode_has_peek(self, micro_env):
-        """SPEC-14.03: Micro mode has peek function."""
+        """SPEC-14.03/14.42: Micro mode supports low-cost context inspection."""
         assert "peek" in micro_env.globals
         result = micro_env.execute("peek('hello world', 0, 5)")
         assert result.success is True
         assert result.output == "hello"
 
     def test_micro_mode_has_search(self, micro_env):
-        """SPEC-14.03: Micro mode has search function."""
+        """SPEC-14.03/14.42: Micro mode supports local pattern search."""
         assert "search" in micro_env.globals
         result = micro_env.execute("search(['apple', 'banana'], 'apple')")
         assert result.success is True
@@ -716,6 +718,30 @@ class TestMicroMode:
         result = micro_env.execute("llm('test')")
         assert result.success is False
         assert "not defined" in result.error
+
+    def test_micro_mode_simple_execution_latency(self, micro_env):
+        """SPEC-14.05: Simple micro-mode operations complete within 500ms."""
+        start = time.perf_counter()
+        result = micro_env.execute("peek('hello world', 0, 5)")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        assert result.success is True
+        assert elapsed_ms < 500
+
+    def test_micro_mode_memory_query_available_when_memory_enabled(self, basic_context):
+        """SPEC-14.42: Externalized micro context can query memory facts."""
+        from src.memory_store import MemoryStore
+
+        with NamedTemporaryFile(suffix=".db") as tmp:
+            memory_store = MemoryStore(db_path=tmp.name)
+            memory_store.add_fact("Authentication uses JWT", confidence=0.9)
+
+            env = create_micro_environment(basic_context, use_restricted=False)
+            env.enable_memory(memory_store)
+
+            assert "memory_query" in env.globals
+            result = env.execute("memory_query('authentication', limit=3)")
+            assert result.success is True
 
     def test_micro_mode_no_llm_batch(self, micro_env):
         """SPEC-14.04: Micro mode does NOT have llm_batch function."""

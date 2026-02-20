@@ -63,7 +63,7 @@ class TestSymbols:
                 assert ord(char) < 0x1F000, f"{symbol.name} contains emoji-like char"
 
     def test_symbol_colors_complete(self) -> None:
-        """Each semantic symbol should have a color mapping."""
+        """SPEC-13.01: Semantic symbols keep consistent color mapping."""
         semantic_symbols = [
             Symbol.RLM,
             Symbol.ACTION,
@@ -96,7 +96,7 @@ class TestOutputConfig:
     """Test configuration handling."""
 
     def test_default_config(self) -> None:
-        """Test default configuration values."""
+        """SPEC-13.51: OutputConfig includes required options with defaults."""
         config = OutputConfig()
         assert config.verbosity == "normal"
         assert config.colors is True
@@ -116,7 +116,7 @@ class TestOutputConfig:
             assert config.verbosity == "normal"
 
     def test_from_env_no_color(self) -> None:
-        """SPEC-13.05: Respect NO_COLOR environment variable."""
+        """SPEC-13.04, SPEC-13.05: Degrade color output and respect NO_COLOR."""
         with patch.dict(os.environ, {"NO_COLOR": "1"}):
             config = OutputConfig.from_env()
             assert config.colors is False
@@ -214,7 +214,7 @@ class TestDepthVisualization:
         assert Symbol.BRANCH.value not in prefix
 
     def test_build_tree_prefix_depth_2(self) -> None:
-        """Depth 2 has continuation line plus connector."""
+        """SPEC-13.31: Depth format uses continuation + connector characters."""
         prefix = build_tree_prefix(2)
         assert Symbol.CONTINUE.value in prefix
         assert Symbol.BRANCH.value in prefix
@@ -283,7 +283,7 @@ class TestRLMConsole:
         assert console.config.verbosity == "debug"
 
     def test_emit_start(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """emit_start outputs RLM activation."""
+        """SPEC-13.11: emit_start renders activation event."""
         config = OutputConfig(colors=False)
         console = RLMConsole(config)
         console.emit_start("test query", depth_budget=3)
@@ -331,7 +331,7 @@ class TestRLMConsole:
         assert "Test error message" in captured.out
 
     def test_emit_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """emit_warning outputs warning with symbol."""
+        """SPEC-13.43: Warning events render with warning symbol."""
         config = OutputConfig(colors=False)
         console = RLMConsole(config)
         console.emit_warning("Test warning")
@@ -349,7 +349,7 @@ class TestRLMConsole:
         assert Symbol.SUCCESS.value in captured.out
 
     def test_emit_budget(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """emit_budget outputs token gauge."""
+        """SPEC-13.11: emit_budget renders token gauge events."""
         config = OutputConfig(colors=False)
         console = RLMConsole(config)
         console.emit_budget(45000, 100000)
@@ -369,6 +369,31 @@ class TestRLMConsole:
         assert "Complete" in captured.out
         assert "5.0K" in captured.out
         assert "150ms" in captured.out
+
+    def test_emit_progress_uses_spinner(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """SPEC-13.23: Long-running progress renders braille spinner updates."""
+        config = OutputConfig(colors=False, progress_throttle_hz=1000)
+        console = RLMConsole(config)
+        console.emit_progress("processing chunk")
+
+        captured = capsys.readouterr()
+        assert "processing chunk" in captured.out
+        assert any(char in captured.out for char in Symbol.SPINNER.value)
+
+    def test_emit_progress_is_throttled(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """SPEC-13.25: Progress updates are throttled to configured max Hz."""
+        config = OutputConfig(colors=False, progress_throttle_hz=10)  # 100ms interval
+        console = RLMConsole(config)
+
+        with patch("src.rich_output.time.perf_counter", side_effect=[0.0, 0.05, 0.2]):
+            console.emit_progress("first")
+            console.emit_progress("second")
+            console.emit_progress("third")
+
+        lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+        assert len(lines) == 2
+        assert "first" in lines[0]
+        assert "third" in lines[1]
 
     def test_tree_rendering(self, capsys: pytest.CaptureFixture[str]) -> None:
         """SPEC-13.14: Tree rendering works."""
@@ -418,7 +443,7 @@ class TestPanelRendering:
         assert "Test" in captured.out
 
     def test_print_error_panel(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """SPEC-13.42: Error panel with red border."""
+        """SPEC-13.40, SPEC-13.42: Error panel renders contextual failure output."""
         config = OutputConfig(colors=False)
         console = RLMConsole(config)
         console.print_error_panel(
@@ -430,6 +455,37 @@ class TestPanelRendering:
         captured = capsys.readouterr()
         assert "ValueError" in captured.out
         assert "Invalid input" in captured.out
+
+    def test_print_error_panel_includes_location_and_suggestion(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """SPEC-13.41: Error format includes location and suggested action."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.print_error_panel(
+            error_type="RuntimeError",
+            message="Computation failed",
+            location="src/module.py:42",
+            suggestion="Inspect input normalization",
+        )
+
+        captured = capsys.readouterr()
+        assert "src/module.py:42" in captured.out
+        assert "Inspect input normalization" in captured.out
+
+    def test_print_error_panel_highlights_context(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """SPEC-13.44: Error context is syntax-highlighted for code snippets."""
+        config = OutputConfig(colors=False)
+        console = RLMConsole(config)
+        console.print_error_panel(
+            error_type="ValueError",
+            message="Bad code",
+            context="def broken():\n    return 1 / 0",
+        )
+
+        captured = capsys.readouterr()
+        assert "def broken()" in captured.out
+        assert "return 1 / 0" in captured.out
 
 
 # ============================================================================

@@ -3,6 +3,7 @@
 #   make dev    - Build for current platform (fast)
 #   make all    - Build for all platforms
 #   make test   - Run tests
+#   make check  - Run repository quality gates (Python + Go)
 #   make clean  - Remove built binaries
 
 GO := go
@@ -14,7 +15,7 @@ CMDS := session-init complexity-check trajectory-save
 # Platforms to build for
 PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64
 
-.PHONY: all dev clean test lint help rcc-contract-baseline rcc-contract-gate rcc-contract-test
+.PHONY: all dev clean test lint check check-python check-go benchmark benchmark-bounded help rcc-contract-baseline rcc-contract-gate rcc-contract-test
 
 # Default: build for current platform
 dev:
@@ -53,6 +54,22 @@ lint:
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; exit 1; }
 	golangci-lint run ./...
 
+# Canonical repository quality gates
+check: check-python check-go
+
+check-python:
+	UV_CACHE_DIR=.uv-cache uv run --extra dev pytest -q
+
+check-go:
+	$(GO) test ./...
+
+# Benchmark suites (excluded from default pytest addopts)
+benchmark:
+	UV_CACHE_DIR=.uv-cache uv run --extra dev pytest -q tests/benchmarks --benchmark-only
+
+benchmark-bounded:
+	UV_CACHE_DIR=.uv-cache RLM_BENCHMARK_BOUNDED=1 RLM_BENCHMARK_ROUNDS=1 RLM_BENCHMARK_ITERATIONS=1 RLM_BENCHMARK_WARMUP_ROUNDS=0 uv run --extra dev pytest -q tests/benchmarks --benchmark-only
+
 # Clean build artifacts
 clean:
 	rm -rf bin/
@@ -68,6 +85,11 @@ help:
 	@echo "  all          - Build for all platforms"
 	@echo "  test         - Run tests"
 	@echo "  lint         - Run linter"
+	@echo "  check        - Run Python and Go quality gates"
+	@echo "  check-python - Run Python test suite"
+	@echo "  check-go     - Run Go test suite"
+	@echo "  benchmark    - Run full benchmark suites"
+	@echo "  benchmark-bounded - Run bounded benchmark mode for restricted environments"
 	@echo "  rcc-contract-baseline - Generate A1-A5 compatibility artifact set"
 	@echo "  rcc-contract-gate     - Run A1-A5 compatibility gate (strict)"
 	@echo "  rcc-contract-test     - Run A1-A5 probe test suite"

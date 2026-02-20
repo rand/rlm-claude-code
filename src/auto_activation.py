@@ -356,6 +356,12 @@ class AutoActivator:
         """
         prompt_lower = prompt.lower()
 
+        # SPEC-14.23: Honor strict token budgets by keeping execution in micro mode.
+        # We use a conservative threshold: if session budget is below the balanced
+        # entry point, avoid escalation and keep costs bounded.
+        if self.preferences.budget_tokens < self.thresholds.escalate_to_balanced_tokens:
+            return ExecutionMode.MICRO, "micro_mode:budget_guard"
+
         # SPEC-14.21: Immediate escalation to THOROUGH
         if any(kw in prompt_lower for kw in ["architecture", "design decision", "thorough"]):
             return ExecutionMode.THOROUGH, "escalate_thorough:architecture_or_user_request"

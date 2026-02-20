@@ -1870,6 +1870,14 @@ class TestMicroModeMemoryIntegration:
         # This should not raise any errors
         assert isinstance(results, list)
 
+    def test_retrieve_for_query_accepts_embedding_mode(self, memory_store):
+        """SPEC-14.55: Escalated retrieval path accepts embedding mode requests."""
+        memory_store.add_fact("Escalation retrieval test fact")
+
+        results = memory_store.retrieve_for_query("retrieval", k=5, use_embedding=True)
+
+        assert isinstance(results, list)
+
     def test_retrieve_for_query_returns_dicts(self, memory_store):
         """retrieve_for_query returns dicts with expected keys."""
         memory_store.add_fact("Test content for retrieval")
@@ -1951,7 +1959,7 @@ class TestCreateMicroMemoryLoader:
         assert callable(loader)
 
     def test_loader_retrieves_facts(self, memory_store):
-        """Loader retrieves relevant facts when called."""
+        """SPEC-14.51: Each query invokes memory retrieval via loader call."""
         from src.memory_store import create_micro_memory_loader
 
         memory_store.add_fact("Test fact about authentication")
@@ -1975,7 +1983,7 @@ class TestCreateMicroMemoryLoader:
         assert len(results) <= 3
 
     def test_loader_is_lazy(self, memory_store):
-        """Loader doesn't execute until called."""
+        """SPEC-14.51: Loader defers retrieval until query-time invocation."""
         from src.memory_store import create_micro_memory_loader
 
         call_count = [0]

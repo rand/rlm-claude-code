@@ -103,7 +103,7 @@ class TestCheckComplexityScript:
         assert state["activate_rlm"] is False
 
     def test_complex_query_activated(self, tmp_path, monkeypatch):
-        """Complex query should activate RLM with proper hook output."""
+        """SPEC-17.10: Hook output is emitted on UserPromptSubmit."""
         monkeypatch.setenv("HOME", str(tmp_path))
 
         result = subprocess.run(

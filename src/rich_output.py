@@ -14,6 +14,7 @@ Provides enhanced terminal output using the Rich library with:
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
@@ -291,6 +292,8 @@ class RLMConsole:
         self.depth_tracker = DepthTracker(max_depth=self.config.max_depth_display)
         self._tree: Tree | None = None
         self._tree_nodes: dict[int, Any] = {}  # depth -> current tree node
+        self._spinner_index = 0
+        self._last_progress_ms: float | None = None
 
     def _should_emit(self, level: str) -> bool:
         """Check if event should be emitted based on verbosity."""
@@ -501,6 +504,37 @@ class RLMConsole:
             max_depth=max_depth,
         )
         self.console.print(gauge)
+
+    def emit_progress(self, message: str, depth: int = 0, force: bool = False) -> None:
+        """
+        Emit spinner-based progress for long-running operations.
+
+        SPEC-13.23: Show progress via spinner.
+        SPEC-13.25: Throttle updates to reduce output noise.
+        """
+        if not self._should_emit("normal"):
+            return
+
+        max_hz = max(1, self.config.progress_throttle_hz)
+        interval_ms = 1000.0 / max_hz
+        now_ms = time.perf_counter() * 1000.0
+
+        if (
+            not force
+            and self._last_progress_ms is not None
+            and now_ms - self._last_progress_ms < interval_ms
+        ):
+            return
+
+        spinner_chars = Symbol.SPINNER.value
+        spinner = spinner_chars[self._spinner_index % len(spinner_chars)]
+        self._spinner_index += 1
+        self._last_progress_ms = now_ms
+
+        text = self._format_prefix(depth)
+        text.append(f"{spinner} ", style=Color.DIM.value)
+        text.append(message, style=Color.DIM.value)
+        self.console.print(text)
 
     def emit_complete(
         self,

@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+// @trace SPEC-17.11
+// @trace SPEC-17.12
+
+// @trace SPEC-17.06
 func TestIsFastPath(t *testing.T) {
 	tests := []struct {
 		prompt string
@@ -29,6 +33,8 @@ func TestIsFastPath(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_MultipleFiles(t *testing.T) {
 	s := ExtractSignals("Update main.go and utils.py to fix the bug")
 	if !s.ReferencesMultipleFiles {
@@ -36,6 +42,8 @@ func TestExtractSignals_MultipleFiles(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_ModulePair(t *testing.T) {
 	s := ExtractSignals("coordinate auth and api modules")
 	if !s.ReferencesMultipleFiles {
@@ -46,6 +54,8 @@ func TestExtractSignals_ModulePair(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_CrossContext(t *testing.T) {
 	s := ExtractSignals("why does this fail when we pass nil?")
 	if !s.RequiresCrossContextReasoning {
@@ -53,6 +63,8 @@ func TestExtractSignals_CrossContext(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_Debugging(t *testing.T) {
 	s := ExtractSignals("debug the error in the handler")
 	if !s.DebuggingTask {
@@ -60,6 +72,8 @@ func TestExtractSignals_Debugging(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_ExhaustiveSearch(t *testing.T) {
 	s := ExtractSignals("find all instances of the deprecated function")
 	if !s.RequiresExhaustiveSearch {
@@ -67,6 +81,8 @@ func TestExtractSignals_ExhaustiveSearch(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_Security(t *testing.T) {
 	s := ExtractSignals("check for SQL injection vulnerabilities")
 	if !s.SecurityReviewTask {
@@ -74,6 +90,8 @@ func TestExtractSignals_Security(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_Architecture(t *testing.T) {
 	s := ExtractSignals("how does the authentication system work?")
 	if !s.ArchitectureAnalysis {
@@ -81,6 +99,8 @@ func TestExtractSignals_Architecture(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.03
 func TestExtractSignals_Refactor(t *testing.T) {
 	s := ExtractSignals("Refactor the auth system across all handlers to use JWT")
 	if !s.ArchitectureAnalysis {
@@ -88,6 +108,8 @@ func TestExtractSignals_Refactor(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.04
 func TestExtractSignals_Thorough(t *testing.T) {
 	s := ExtractSignals("make sure all tests pass before committing")
 	if !s.UserWantsThorough {
@@ -95,6 +117,8 @@ func TestExtractSignals_Thorough(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.05
 func TestExtractSignals_Fast(t *testing.T) {
 	s := ExtractSignals("just show me the file")
 	if !s.UserWantsFast {
@@ -102,6 +126,8 @@ func TestExtractSignals_Fast(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.02
+// @trace SPEC-17.04
 func TestExtractSignals_Continuation(t *testing.T) {
 	s := ExtractSignals("also fix the tests while you're at it")
 	if !s.TaskIsContinuation {
@@ -109,6 +135,7 @@ func TestExtractSignals_Continuation(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
 func TestShouldActivate_Simple(t *testing.T) {
 	activate, reason, mode := ShouldActivate("yes", "", "")
 	if activate {
@@ -116,6 +143,8 @@ func TestShouldActivate_Simple(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
+// @trace SPEC-17.05
 func TestShouldActivate_FastIntent(t *testing.T) {
 	activate, reason, _ := ShouldActivate("just show me the file contents", "", "")
 	if activate {
@@ -126,6 +155,7 @@ func TestShouldActivate_FastIntent(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
 func TestShouldActivate_Debugging(t *testing.T) {
 	activate, reason, _ := ShouldActivate("Debug why the API returns 500 errors on POST", "", "")
 	if !activate {
@@ -136,6 +166,7 @@ func TestShouldActivate_Debugging(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
 func TestShouldActivate_Security(t *testing.T) {
 	activate, reason, _ := ShouldActivate("Find all places where we access the database without auth", "", "")
 	if !activate {
@@ -147,6 +178,7 @@ func TestShouldActivate_Security(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
 func TestShouldActivate_Architecture(t *testing.T) {
 	activate, reason, _ := ShouldActivate("Refactor the auth system across all handlers to use JWT", "", "")
 	if !activate {
@@ -158,6 +190,7 @@ func TestShouldActivate_Architecture(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.01
 func TestShouldActivate_MultiModule(t *testing.T) {
 	activate, reason, _ := ShouldActivate("Update main.go and utils.py with the new config", "", "")
 	if !activate {
@@ -168,6 +201,7 @@ func TestShouldActivate_MultiModule(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.07
 func TestSuggestMode_DPPhases(t *testing.T) {
 	tests := []struct {
 		phase string
@@ -188,6 +222,7 @@ func TestSuggestMode_DPPhases(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.08
 func TestSuggestMode_NotActivated(t *testing.T) {
 	got := SuggestMode(false, "spec")
 	if got != "micro" {
@@ -195,6 +230,7 @@ func TestSuggestMode_NotActivated(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.04
 func TestScore_Accumulative(t *testing.T) {
 	s := Signals{
 		ReferencesMultipleFiles:   true,
@@ -209,6 +245,7 @@ func TestScore_Accumulative(t *testing.T) {
 	}
 }
 
+// @trace SPEC-17.04
 func TestScore_BelowThreshold(t *testing.T) {
 	s := Signals{
 		TaskIsContinuation: true, // +1, below threshold of 2

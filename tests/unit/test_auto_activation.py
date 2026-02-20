@@ -204,7 +204,7 @@ class TestAutoActivator:
         assert decision.confidence == 1.0
 
     def test_force_simple(self, activator, complex_context):
-        """Force simple always skips."""
+        """SPEC-14.13: /simple-equivalent force bypass skips RLM."""
         decision = activator.should_activate(
             "complex multi-file query about auth.py and api.py",
             complex_context,
@@ -215,7 +215,7 @@ class TestAutoActivator:
         assert decision.reason == "manual_force_simple"
 
     def test_auto_activate_disabled(self, activator, complex_context):
-        """Respects disabled auto-activation."""
+        """SPEC-14.14: Session-wide disable turns off auto-activation."""
         activator.preferences = UserPreferences(auto_activate=False)
 
         decision = activator.should_activate(
@@ -227,16 +227,18 @@ class TestAutoActivator:
         assert decision.reason == "auto_activate_disabled"
 
     def test_simple_query_skips(self, activator, empty_context):
-        """Simple queries skip activation."""
+        """SPEC-14.31, SPEC-14.32, SPEC-14.34: Fast-path query bypasses with high confidence."""
         decision = activator.should_activate(
             "ok",
             empty_context,
         )
 
         assert decision.should_activate is False
+        assert decision.is_fast_path is True
+        assert decision.confidence >= 0.95
 
     def test_large_context_activates(self, activator, large_context):
-        """Large context auto-activates (SPEC-14.20: escalates to thorough)."""
+        """SPEC-14.21, SPEC-14.22: Large context triggers logged escalation to thorough mode."""
         decision = activator.should_activate(
             "any query",
             large_context,
@@ -247,13 +249,22 @@ class TestAutoActivator:
         assert "large_context" in decision.reason
 
     def test_complex_query_activates(self, activator, complex_context):
-        """Complex queries activate."""
+        """SPEC-14.21, SPEC-14.22: Complex query triggers escalation with explicit reason."""
         decision = activator.should_activate(
             "Why does auth.py fail when api.py calls the handler?",
             complex_context,
         )
 
         assert decision.should_activate is True
+        assert decision.reason.startswith("escalate_balanced:")
+
+    def test_architecture_keyword_escalates_to_thorough(self, activator, empty_context):
+        """SPEC-14.21: Architecture analysis escalates directly to thorough mode."""
+        decision = activator.should_activate("Review architecture tradeoffs for this design", empty_context)
+
+        assert decision.should_activate is True
+        assert decision.execution_mode == ExecutionMode.THOROUGH
+        assert decision.reason.startswith("escalate_thorough:")
 
     def test_debugging_with_large_output(self, activator):
         """Debugging with large output activates."""
@@ -269,6 +280,17 @@ class TestAutoActivator:
         )
 
         assert decision.should_activate is True
+        assert decision.reason.startswith("escalate_balanced:")
+
+    def test_budget_guard_prevents_escalation(self, activator, large_context):
+        """SPEC-14.23: Escalation is blocked when budget would be exceeded."""
+        activator.preferences = UserPreferences(budget_tokens=1_000)
+
+        decision = activator.should_activate("investigate system architecture", large_context)
+
+        assert decision.should_activate is True
+        assert decision.execution_mode == ExecutionMode.MICRO
+        assert decision.reason == "micro_mode:budget_guard"
 
     def test_decision_time_tracked(self, activator, empty_context):
         """Decision time is tracked."""
@@ -277,7 +299,7 @@ class TestAutoActivator:
         assert decision.decision_time_ms > 0
 
     def test_statistics_tracked(self, activator, empty_context):
-        """Statistics are tracked."""
+        """SPEC-14.15, SPEC-14.33: Activation and fast-path decisions are logged in stats."""
         activator.should_activate("query 1", empty_context)
         activator.should_activate("query 2", empty_context)
 
@@ -386,7 +408,7 @@ class TestCreatePlanFromDecision:
         assert plan.depth_budget <= 1  # Respects max_depth preference
 
     def test_low_confidence_reduces_depth(self, activator):
-        """Low confidence reduces depth budget."""
+        """SPEC-14.25: Escalation confidence influences plan depth."""
         activator.preferences = UserPreferences(max_depth=3)
 
         decision = ActivationDecision(
@@ -443,7 +465,7 @@ class TestIntegration:
     """Integration tests for auto-activation."""
 
     def test_full_workflow(self, complex_context):
-        """Full activation workflow."""
+        """SPEC-14.24: Escalation workflow preserves context-derived signal state."""
         activator = AutoActivator()
 
         # Check activation

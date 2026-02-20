@@ -10,6 +10,7 @@ Scope: entire `rlm-claude-code` system surface, including loop (`rlm-core`) cons
 |---|---|---|
 | `UV_CACHE_DIR=.uv-cache uv run --extra dev pytest -q` | Full Python correctness and integration suite | `3268 passed, 3 deselected, 8 warnings` |
 | `go test ./...` | Go-side classifier/hook correctness | all packages passing |
+| `make check` | Canonical repo quality gate (Python + Go) | pass (`3281 passed, 3 deselected`) |
 | `make rcc-contract-gate` | Loop consumer contract gate (A1-A5) | pass, `all_passed=True`, `claim_scope=claim-ready-for-pinned-vendor-sha-only` |
 | `UV_CACHE_DIR=.uv-cache uv run dp enforce pre-commit --policy dp-policy.json --json` | Policy pre-commit gate | `ok=true` |
 | `UV_CACHE_DIR=.uv-cache uv run dp review --json` | Review gate | `ok=true` |
@@ -53,21 +54,20 @@ Empirical OODA coverage is exercised by:
 
 Snapshot script results:
 - Total spec IDs in `docs/spec`: `422`
-- IDs with direct test trace references: `320`
-- IDs without direct test trace references: `102`
+- IDs with direct test trace references: `361`
+- IDs without direct test trace references: `61`
+- Non-deferred IDs without direct test trace references: `23`
 
 Largest uncovered buckets:
 - `SPEC-15`: 38 IDs (documented deferred lean-REPL scope)
-- `SPEC-14`: 17 IDs
-- `SPEC-17`: 12 IDs (mostly covered by Go tests rather than Python trace tags)
-- `SPEC-13`: 10 IDs
+- non-deferred residual buckets: `SPEC-00/01/02/03/04/08/09/12`
 
 Interpretation:
 - Core system behavior is empirically green end-to-end.
-- Remaining traceability work is primarily explicit trace-tag coverage/documentation alignment rather than failing behavior.
+- Prioritized non-deferred traceability gaps in SPEC-13/14/16/17 are now explicitly tagged and covered.
+- Remaining non-deferred traceability work is in earlier baseline specs (00/01/02/03/04/08/09/12).
 
 ## Remaining Follow-Up Work (Tracked Separately)
 
-1. Add a repo-level `make check` target or align AGENTS defaults to existing gate commands.
-2. Expand explicit test trace tags for non-deferred uncovered IDs in SPEC-13/14/16/17.
-3. Add a time-bounded benchmark execution mode for CI/sandbox reliability (`tests/benchmarks` can be long-running in restricted environments).
+1. Expand explicit trace coverage for residual non-deferred IDs in SPEC-00/01/02/03/04/08/09/12 (`23` IDs remaining).
+2. Keep `make benchmark-bounded` as the default benchmark path in constrained environments and capture longitudinal perf baselines.

@@ -24,7 +24,7 @@ from src.prompt_optimizer import PromptLibrary, PromptResult, PromptType
 class TestCacheBenchmarks:
     """Benchmark tests for caching operations."""
 
-    def test_lru_cache_put_performance(self, benchmark):
+    def test_lru_cache_put_performance(self, bounded_benchmark):
         """Benchmark LRU cache put operations."""
         cache: LRUCache[str] = LRUCache(max_entries=1000)
 
@@ -32,9 +32,9 @@ class TestCacheBenchmarks:
             for i in range(100):
                 cache.put(f"key_{i}", f"value_{i}" * 100)
 
-        benchmark(do_puts)
+        bounded_benchmark(do_puts)
 
-    def test_lru_cache_get_performance(self, benchmark):
+    def test_lru_cache_get_performance(self, bounded_benchmark):
         """Benchmark LRU cache get operations (hits)."""
         cache: LRUCache[str] = LRUCache(max_entries=1000)
         # Pre-populate
@@ -45,9 +45,9 @@ class TestCacheBenchmarks:
             for i in range(100):
                 cache.get(f"key_{i}")
 
-        benchmark(do_gets)
+        bounded_benchmark(do_gets)
 
-    def test_lru_cache_mixed_operations(self, benchmark):
+    def test_lru_cache_mixed_operations(self, bounded_benchmark):
         """Benchmark mixed cache operations."""
         cache: LRUCache[str] = LRUCache(max_entries=500)
 
@@ -58,9 +58,9 @@ class TestCacheBenchmarks:
                 if i % 10 == 0:
                     cache.invalidate(f"key_{i}")
 
-        benchmark(do_mixed)
+        bounded_benchmark(do_mixed)
 
-    def test_summarization_cache_performance(self, benchmark):
+    def test_summarization_cache_performance(self, bounded_benchmark):
         """Benchmark summarization cache operations."""
         cache = SummarizationCache(max_entries=100)
         content = "x" * 10000  # 10KB content
@@ -71,9 +71,9 @@ class TestCacheBenchmarks:
                 cache.put_summary(content + str(i), summary)
                 cache.get_summary(content + str(i))
 
-        benchmark(do_cache_ops)
+        bounded_benchmark(do_cache_ops)
 
-    def test_context_cache_file_operations(self, benchmark):
+    def test_context_cache_file_operations(self, bounded_benchmark):
         """Benchmark context cache file operations."""
         cache = ContextCache(max_files=100)
         file_content = "def foo():\n    pass\n" * 100
@@ -83,9 +83,9 @@ class TestCacheBenchmarks:
                 cache.put_file(f"/path/to/file_{i}.py", file_content)
                 cache.get_file(f"/path/to/file_{i}.py")
 
-        benchmark(do_file_ops)
+        bounded_benchmark(do_file_ops)
 
-    def test_repl_state_cache_save_load(self, benchmark):
+    def test_repl_state_cache_save_load(self, bounded_benchmark):
         """Benchmark REPL state save/load operations."""
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = REPLStateCache(cache_dir=Path(tmpdir))
@@ -99,13 +99,13 @@ class TestCacheBenchmarks:
                     cache.save_state(f"session_{i}", state)
                     cache.load_state(f"session_{i}")
 
-            benchmark(do_save_load)
+            bounded_benchmark(do_save_load)
 
 
 class TestCostTrackerBenchmarks:
     """Benchmark tests for cost tracking operations."""
 
-    def test_record_usage_performance(self, benchmark):
+    def test_record_usage_performance(self, bounded_benchmark):
         """Benchmark token usage recording."""
         tracker = CostTracker(budget_tokens=1_000_000)
 
@@ -118,10 +118,10 @@ class TestCostTrackerBenchmarks:
                     component=CostComponent.ROOT_PROMPT,
                 )
 
-        benchmark(do_records)
+        bounded_benchmark(do_records)
         tracker.reset()
 
-    def test_estimate_cost_performance(self, benchmark):
+    def test_estimate_cost_performance(self, bounded_benchmark):
         """Benchmark cost estimation."""
         tracker = CostTracker()
 
@@ -134,9 +134,9 @@ class TestCostTrackerBenchmarks:
                     component=CostComponent.RECURSIVE_CALL,
                 )
 
-        benchmark(do_estimates)
+        bounded_benchmark(do_estimates)
 
-    def test_breakdown_calculation_performance(self, benchmark):
+    def test_breakdown_calculation_performance(self, bounded_benchmark):
         """Benchmark breakdown calculations with many records."""
         tracker = CostTracker(budget_tokens=10_000_000)
         # Pre-populate with records
@@ -155,9 +155,9 @@ class TestCostTrackerBenchmarks:
             tracker.get_breakdown_by_model()
             tracker.get_summary()
 
-        benchmark(do_breakdowns)
+        bounded_benchmark(do_breakdowns)
 
-    def test_token_estimation_performance(self, benchmark):
+    def test_token_estimation_performance(self, bounded_benchmark):
         """Benchmark token estimation for various text sizes."""
         texts = [
             "short text",
@@ -170,13 +170,13 @@ class TestCostTrackerBenchmarks:
                 for _ in range(10):
                     estimate_tokens(text)
 
-        benchmark(do_estimates)
+        bounded_benchmark(do_estimates)
 
 
 class TestPromptOptimizerBenchmarks:
     """Benchmark tests for prompt optimization operations."""
 
-    def test_variant_selection_performance(self, benchmark):
+    def test_variant_selection_performance(self, bounded_benchmark):
         """Benchmark variant selection."""
         with tempfile.TemporaryDirectory() as tmpdir:
             library = PromptLibrary(storage_path=Path(tmpdir))
@@ -186,9 +186,9 @@ class TestPromptOptimizerBenchmarks:
                     library.select_variant(PromptType.ROOT, strategy="epsilon_greedy")
                     library.select_variant(PromptType.RECURSIVE, strategy="random")
 
-            benchmark(do_selections)
+            bounded_benchmark(do_selections)
 
-    def test_result_recording_performance(self, benchmark):
+    def test_result_recording_performance(self, bounded_benchmark):
         """Benchmark result recording."""
         with tempfile.TemporaryDirectory() as tmpdir:
             library = PromptLibrary(storage_path=Path(tmpdir))
@@ -205,9 +205,9 @@ class TestPromptOptimizerBenchmarks:
                         )
                     )
 
-            benchmark(do_records)
+            bounded_benchmark(do_records)
 
-    def test_prompt_rendering_performance(self, benchmark):
+    def test_prompt_rendering_performance(self, bounded_benchmark):
         """Benchmark prompt template rendering."""
         with tempfile.TemporaryDirectory() as tmpdir:
             library = PromptLibrary(storage_path=Path(tmpdir))
@@ -224,9 +224,9 @@ class TestPromptOptimizerBenchmarks:
                         query=query,
                     )
 
-            benchmark(do_renders)
+            bounded_benchmark(do_renders)
 
-    def test_recommendations_performance(self, benchmark):
+    def test_recommendations_performance(self, bounded_benchmark):
         """Benchmark recommendation generation."""
         with tempfile.TemporaryDirectory() as tmpdir:
             library = PromptLibrary(storage_path=Path(tmpdir))
@@ -247,13 +247,13 @@ class TestPromptOptimizerBenchmarks:
                 for _ in range(10):
                     library.get_recommendations(PromptType.ROOT)
 
-            benchmark(do_recommendations)
+            bounded_benchmark(do_recommendations)
 
 
 class TestAsyncBenchmarks:
     """Benchmark tests for async operations."""
 
-    def test_parallel_task_overhead(self, benchmark):
+    def test_parallel_task_overhead(self, bounded_benchmark):
         """Benchmark overhead of parallel task creation."""
 
         async def dummy_task(i: int) -> int:
@@ -267,9 +267,9 @@ class TestAsyncBenchmarks:
         def do_parallel():
             return asyncio.run(run_parallel())
 
-        benchmark(do_parallel)
+        bounded_benchmark(do_parallel)
 
-    def test_semaphore_overhead(self, benchmark):
+    def test_semaphore_overhead(self, bounded_benchmark):
         """Benchmark semaphore acquisition overhead."""
 
         async def acquire_release():
@@ -281,13 +281,13 @@ class TestAsyncBenchmarks:
         def do_semaphore():
             asyncio.run(acquire_release())
 
-        benchmark(do_semaphore)
+        bounded_benchmark(do_semaphore)
 
 
 class TestIntegrationBenchmarks:
     """Integration benchmarks for complete workflows."""
 
-    def test_full_cache_workflow(self, benchmark):
+    def test_full_cache_workflow(self, bounded_benchmark):
         """Benchmark complete caching workflow."""
         with tempfile.TemporaryDirectory() as tmpdir:
             context_cache = ContextCache()
@@ -312,9 +312,9 @@ class TestIntegrationBenchmarks:
                     context_cache.get_file(f"/src/file_{i}.py")
                     summary_cache.get_summary(content)
 
-            benchmark(do_workflow)
+            bounded_benchmark(do_workflow)
 
-    def test_full_cost_tracking_workflow(self, benchmark):
+    def test_full_cost_tracking_workflow(self, bounded_benchmark):
         """Benchmark complete cost tracking workflow."""
         tracker = CostTracker(budget_tokens=500_000, budget_dollars=10.0)
 
@@ -344,5 +344,5 @@ class TestIntegrationBenchmarks:
             # Get summary
             tracker.get_summary()
 
-        benchmark(do_workflow)
+        bounded_benchmark(do_workflow)
         tracker.reset()

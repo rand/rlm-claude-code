@@ -39,7 +39,7 @@ from src.epistemic.similarity import (
 class TestClaimVerificationBenchmarks:
     """Benchmark tests for ClaimVerification operations."""
 
-    def test_claim_verification_creation(self, benchmark: Any) -> None:
+    def test_claim_verification_creation(self, bounded_benchmark: Any) -> None:
         """Benchmark ClaimVerification object creation."""
 
         def create_claims() -> list[ClaimVerification]:
@@ -57,10 +57,10 @@ class TestClaimVerificationBenchmarks:
                 )
             return claims
 
-        result = benchmark(create_claims)
+        result = bounded_benchmark(create_claims)
         assert len(result) == 100
 
-    def test_claim_verification_combined_score(self, benchmark: Any) -> None:
+    def test_claim_verification_combined_score(self, bounded_benchmark: Any) -> None:
         """Benchmark combined_score computation."""
         claims = [
             ClaimVerification(
@@ -75,14 +75,14 @@ class TestClaimVerificationBenchmarks:
         def compute_scores() -> list[float]:
             return [c.combined_score for c in claims]
 
-        result = benchmark(compute_scores)
+        result = bounded_benchmark(compute_scores)
         assert len(result) == 100
 
 
 class TestHallucinationReportBenchmarks:
     """Benchmark tests for HallucinationReport operations."""
 
-    def test_report_creation_with_claims(self, benchmark: Any) -> None:
+    def test_report_creation_with_claims(self, bounded_benchmark: Any) -> None:
         """Benchmark HallucinationReport creation with many claims."""
 
         def create_report() -> HallucinationReport:
@@ -113,11 +113,11 @@ class TestHallucinationReportBenchmarks:
                 gaps=gaps,
             )
 
-        result = benchmark(create_report)
+        result = bounded_benchmark(create_report)
         assert result.total_claims == 50
         assert result.flagged_claims == 10
 
-    def test_report_add_claims_incrementally(self, benchmark: Any) -> None:
+    def test_report_add_claims_incrementally(self, bounded_benchmark: Any) -> None:
         """Benchmark adding claims incrementally to report."""
 
         def add_claims() -> HallucinationReport:
@@ -133,14 +133,14 @@ class TestHallucinationReportBenchmarks:
                 )
             return report
 
-        result = benchmark(add_claims)
+        result = bounded_benchmark(add_claims)
         assert result.total_claims == 50
 
 
 class TestVerificationConfigBenchmarks:
     """Benchmark tests for VerificationConfig operations."""
 
-    def test_config_should_verify_sampling(self, benchmark: Any) -> None:
+    def test_config_should_verify_sampling(self, bounded_benchmark: Any) -> None:
         """Benchmark should_verify_claim in sample mode."""
         config = VerificationConfig(mode="sample", sample_rate=0.3)
 
@@ -156,10 +156,10 @@ class TestVerificationConfigBenchmarks:
                 )
             return results
 
-        result = benchmark(check_many_claims)
+        result = bounded_benchmark(check_many_claims)
         assert len(result) == 1000
 
-    def test_config_uncertainty_marker_detection(self, benchmark: Any) -> None:
+    def test_config_uncertainty_marker_detection(self, bounded_benchmark: Any) -> None:
         """Benchmark uncertainty marker detection."""
         config = VerificationConfig()
         texts = [
@@ -174,7 +174,7 @@ class TestVerificationConfigBenchmarks:
         def check_uncertainty() -> list[bool]:
             return [config._has_uncertainty_markers(text) for text in texts]
 
-        result = benchmark(check_uncertainty)
+        result = bounded_benchmark(check_uncertainty)
         assert len(result) == 600
 
 
@@ -190,7 +190,7 @@ class TestVerificationCacheBenchmarks:
         yield cache
         os.unlink(path)
 
-    def test_cache_put_performance(self, benchmark: Any, cache: VerificationCache) -> None:
+    def test_cache_put_performance(self, bounded_benchmark: Any, cache: VerificationCache) -> None:
         """Benchmark cache put operations."""
 
         def do_puts() -> list[str]:
@@ -206,10 +206,10 @@ class TestVerificationCacheBenchmarks:
                 keys.append(key)
             return keys
 
-        result = benchmark(do_puts)
+        result = bounded_benchmark(do_puts)
         assert len(result) == 100
 
-    def test_cache_get_performance(self, benchmark: Any, cache: VerificationCache) -> None:
+    def test_cache_get_performance(self, bounded_benchmark: Any, cache: VerificationCache) -> None:
         """Benchmark cache get operations (hits)."""
         # Pre-populate cache
         claims_evidence = []
@@ -233,10 +233,10 @@ class TestVerificationCacheBenchmarks:
                     hits += 1
             return hits
 
-        result = benchmark(do_gets)
+        result = bounded_benchmark(do_gets)
         assert result == 100
 
-    def test_cache_mixed_operations(self, benchmark: Any, cache: VerificationCache) -> None:
+    def test_cache_mixed_operations(self, bounded_benchmark: Any, cache: VerificationCache) -> None:
         """Benchmark mixed cache operations."""
 
         def do_mixed() -> int:
@@ -260,14 +260,14 @@ class TestVerificationCacheBenchmarks:
                 cache.get(f"Nonexistent claim {i}", "No evidence")
             return hits
 
-        result = benchmark(do_mixed)
+        result = bounded_benchmark(do_mixed)
         assert result == 50
 
 
 class TestSimilarityBenchmarks:
     """Benchmark tests for similarity computation."""
 
-    def test_cosine_similarity_performance(self, benchmark: Any) -> None:
+    def test_cosine_similarity_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark cosine similarity computation."""
         # Create random-ish vectors
         vec_a = [float(i % 100) / 100 for i in range(384)]
@@ -279,10 +279,10 @@ class TestSimilarityBenchmarks:
                 total += cosine_similarity(vec_a, vec_b)
             return total
 
-        result = benchmark(compute_similarity)
+        result = bounded_benchmark(compute_similarity)
         assert result > 0
 
-    def test_text_overlap_similarity_performance(self, benchmark: Any) -> None:
+    def test_text_overlap_similarity_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark text overlap similarity."""
         text_a = "The quick brown fox jumps over the lazy dog " * 10
         text_b = "The fast brown fox leaps over the sleepy dog " * 10
@@ -293,14 +293,14 @@ class TestSimilarityBenchmarks:
                 total += text_overlap_similarity(text_a, text_b)
             return total
 
-        result = benchmark(compute_overlap)
+        result = bounded_benchmark(compute_overlap)
         assert result > 0
 
 
 class TestPromptBenchmarks:
     """Benchmark tests for prompt operations."""
 
-    def test_format_prompt_performance(self, benchmark: Any) -> None:
+    def test_format_prompt_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark prompt formatting."""
 
         def format_prompts() -> list[tuple[str, str]]:
@@ -314,10 +314,10 @@ class TestPromptBenchmarks:
                 results.append((system, user))
             return results
 
-        result = benchmark(format_prompts)
+        result = bounded_benchmark(format_prompts)
         assert len(result) == 100
 
-    def test_estimate_tokens_performance(self, benchmark: Any) -> None:
+    def test_estimate_tokens_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark token estimation."""
 
         def estimate_many() -> list[int]:
@@ -330,10 +330,10 @@ class TestPromptBenchmarks:
                 results.append(tokens)
             return results
 
-        result = benchmark(estimate_many)
+        result = bounded_benchmark(estimate_many)
         assert len(result) == 100
 
-    def test_truncate_evidence_performance(self, benchmark: Any) -> None:
+    def test_truncate_evidence_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark evidence truncation."""
         long_evidence = "x" * 10000
 
@@ -343,10 +343,10 @@ class TestPromptBenchmarks:
                 results.append(truncate_evidence(long_evidence, max_chars=max_chars))
             return results
 
-        result = benchmark(truncate_many)
+        result = bounded_benchmark(truncate_many)
         assert len(result) == 100
 
-    def test_format_claims_compact_performance(self, benchmark: Any) -> None:
+    def test_format_claims_compact_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark compact claims formatting."""
         claims = [{"claim": f"This is claim number {i} about the system"} for i in range(50)]
 
@@ -356,10 +356,10 @@ class TestPromptBenchmarks:
                 results.append(format_claims_compact(claims))
             return results
 
-        result = benchmark(format_many)
+        result = bounded_benchmark(format_many)
         assert len(result) == 100
 
-    def test_format_evidence_compact_performance(self, benchmark: Any) -> None:
+    def test_format_evidence_compact_performance(self, bounded_benchmark: Any) -> None:
         """Benchmark compact evidence formatting."""
         evidence = {f"e{i}": f"Evidence content number {i} " * 20 for i in range(20)}
 
@@ -369,14 +369,14 @@ class TestPromptBenchmarks:
                 results.append(format_evidence_compact(evidence, max_per_item=200))
             return results
 
-        result = benchmark(format_many)
+        result = bounded_benchmark(format_many)
         assert len(result) == 100
 
 
 class TestExtractedClaimBenchmarks:
     """Benchmark tests for ExtractedClaim operations."""
 
-    def test_extracted_claim_creation(self, benchmark: Any) -> None:
+    def test_extracted_claim_creation(self, bounded_benchmark: Any) -> None:
         """Benchmark ExtractedClaim creation."""
 
         def create_claims() -> list[ExtractedClaim]:
@@ -394,7 +394,7 @@ class TestExtractedClaimBenchmarks:
                 )
             return claims
 
-        result = benchmark(create_claims)
+        result = bounded_benchmark(create_claims)
         assert len(result) == 100
 
 
@@ -410,7 +410,9 @@ class TestIntegrationBenchmarks:
         yield cache
         os.unlink(path)
 
-    def test_full_verification_data_flow(self, benchmark: Any, cache: VerificationCache) -> None:
+    def test_full_verification_data_flow(
+        self, bounded_benchmark: Any, cache: VerificationCache
+    ) -> None:
         """Benchmark complete verification data flow (without LLM calls)."""
         config = VerificationConfig(mode="sample", sample_rate=0.3)
 
@@ -469,10 +471,10 @@ class TestIntegrationBenchmarks:
 
             return report
 
-        result = benchmark(do_workflow)
+        result = bounded_benchmark(do_workflow)
         assert result.total_claims > 0
 
-    def test_batch_claim_processing(self, benchmark: Any) -> None:
+    def test_batch_claim_processing(self, bounded_benchmark: Any) -> None:
         """Benchmark batch claim processing."""
 
         def process_batch() -> list[dict[str, Any]]:
@@ -504,6 +506,6 @@ class TestIntegrationBenchmarks:
                 batch_results.append({"resp_idx": resp_idx, "claims": claims})
             return batch_results
 
-        result = benchmark(process_batch)
+        result = bounded_benchmark(process_batch)
         assert len(result) == 10
         assert all(len(r["claims"]) == 10 for r in result)

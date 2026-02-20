@@ -18,7 +18,7 @@ class TestClaimVerification:
     """Tests for ClaimVerification dataclass."""
 
     def test_basic_creation(self) -> None:
-        """Test basic claim verification creation."""
+        """SPEC-16.01: ClaimVerification core type is defined and constructible."""
         claim = ClaimVerification(
             claim_id="c1",
             claim_text="The file contains 5 functions",
@@ -288,7 +288,7 @@ class TestVerificationConfig:
         assert config.should_verify_claim(10, is_critical=True)
 
     def test_should_verify_critical_only_mode(self) -> None:
-        """Test critical_only mode only verifies critical claims."""
+        """SPEC-16.31: critical_only mode verifies only critical claims."""
         config = VerificationConfig(mode="critical_only")
         assert not config.should_verify_claim(0, is_critical=False)
         assert config.should_verify_claim(0, is_critical=True)

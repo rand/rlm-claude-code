@@ -27,7 +27,7 @@ class TestAutoActivationIntegration:
     """Integration tests for auto-activation flow."""
 
     def test_simple_query_skips_activation(self):
-        """Simple queries skip RLM activation end-to-end."""
+        """SPEC-14.32: Fast-path bypass skips RLM entirely end-to-end."""
         context = SessionContext(
             messages=[],
             files={},
@@ -43,6 +43,16 @@ class TestAutoActivationIntegration:
         # Also check via complexity classifier
         should_activate, reason = should_activate_rlm("ok", context)
         assert should_activate is False
+
+    def test_force_simple_command_equivalent_bypasses(self):
+        """SPEC-14.13: /simple-equivalent request bypasses activation."""
+        context = SessionContext(messages=[], files={}, tool_outputs=[])
+        activator = AutoActivator()
+
+        decision = activator.should_activate("Analyze architecture deeply", context, force_simple=True)
+
+        assert decision.should_activate is False
+        assert decision.reason == "manual_force_simple"
 
     def test_complex_query_activates(self):
         """Complex queries activate RLM end-to-end."""
@@ -171,6 +181,16 @@ class TestPreferencesManagerIntegration:
         # Verify preferences updated
         assert manager.prefs.execution_mode == ExecutionMode.FAST
         assert manager.prefs.budget_dollars == 5.0
+
+    def test_off_command_disables_auto_activation(self):
+        """SPEC-14.14: `/rlm off` style command disables session auto-activation."""
+        manager = PreferencesManager()
+
+        msg, params = manager.parse_command("off")
+
+        assert params.get("auto_activate") is False
+        assert manager.prefs.auto_activate is False
+        assert "disabled" in msg
 
     def test_preferences_persistence(self):
         """Preferences can be saved and loaded."""
