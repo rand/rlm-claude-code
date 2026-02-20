@@ -291,10 +291,7 @@ class InteractiveOrchestrator:
         if cost_usd is not None and cost_usd > 0.5:
             return True
 
-        if turn in {10, 20, 30, 40}:
-            return True
-
-        return False
+        return turn in {10, 20, 30, 40}
 
     def should_steer(
         self,

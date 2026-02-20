@@ -397,7 +397,7 @@ class MemoryStore:
             and threading.get_ident() == self._owner_thread_id
         ):
             self._persistent_conn.row_factory = sqlite3.Row
-            return _NoCloseConnection(self._persistent_conn)
+            return _NoCloseConnection(self._persistent_conn)  # type: ignore[return-value]
 
         # Use thread-local connections for non-owner threads to avoid sqlite
         # thread-affinity errors when tests exercise concurrent session access.

@@ -234,8 +234,6 @@ class CodeTaskEnricher:
         class_pattern = r"class\s+(\w+)(?:\([^)]*\))?:"
         for match in re.finditer(class_pattern, content):
             class_name = match.group(1)
-            # Find class body (simplified)
-            start = match.end()
             types[class_name] = {"kind": "class", "position": match.start()}
 
         # Match type annotations
@@ -461,9 +459,6 @@ class ContextEnricher:
         """
         # Classify intent
         intent = self.classifier.classify(query)
-
-        # Get strategy for intent
-        strategy = EnrichmentStrategy.for_intent(intent)
 
         # Gather enrichment data
         enriched = dict(context)

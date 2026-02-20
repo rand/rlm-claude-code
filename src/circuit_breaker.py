@@ -155,12 +155,7 @@ class CircuitBreaker:
         Returns:
             True if request is allowed
         """
-        if self._state == CircuitState.CLOSED:
-            return True
-        elif self._state == CircuitState.HALF_OPEN:
-            return True  # Allow probe request
-        else:  # OPEN
-            return False
+        return self._state in (CircuitState.CLOSED, CircuitState.HALF_OPEN)
 
     def record_failure(
         self,

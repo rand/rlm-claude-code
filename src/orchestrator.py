@@ -658,6 +658,7 @@ class RLMOrchestrator:
                                 "error": str(e),
                             }
                         await asyncio.sleep(retry_backoff_s * attempt)
+            raise RuntimeError(f"Unreachable: max_attempts={max_attempts}")
 
         # Execute all operations in parallel with bounded concurrency
         results = await asyncio.gather(*[execute_op_bounded(op) for op in all_ops])

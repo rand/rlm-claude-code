@@ -734,7 +734,7 @@ class RLMEnvironment:
                 }
             ]
 
-        output_fields = self._signature_registration.get("output_fields", [])
+        output_fields = (self._signature_registration or {}).get("output_fields", [])
         for field_spec in output_fields:
             field_name = field_spec.get("name", "")
             field_type = field_spec.get("field_type", {"type": "custom", "value": "unknown"})

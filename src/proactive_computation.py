@@ -244,7 +244,7 @@ class ComputationHelper:
             tree = ast.parse(expression, mode="eval")
             return self._eval_node(tree.body)
         except (SyntaxError, TypeError) as e:
-            raise ValueError(f"Invalid expression: {e}")
+            raise ValueError(f"Invalid expression: {e}") from e
 
     def _eval_node(self, node: ast.AST) -> Any:
         """Recursively evaluate an AST node."""
@@ -530,7 +530,6 @@ class ComputationAdvisor:
             # Extract numbers and operations from query
             numbers = re.findall(r"\d+(?:\.\d+)?", query)
             if len(numbers) >= 2:
-                expr = query
                 # Try to find the expression
                 match = re.search(r"(\d+(?:\.\d+)?)\s*([+\-*/^])\s*(\d+(?:\.\d+)?)", query)
                 if match:

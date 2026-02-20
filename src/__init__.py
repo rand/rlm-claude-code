@@ -204,7 +204,6 @@ from .lats_orchestration import (
 # Learned routing (SPEC-06.20-06.26)
 from .learned_routing import (
     CascadingRouter,
-    DifficultyEstimate,
     DifficultyEstimator,
     LearnedRouter,
     ModelProfile,

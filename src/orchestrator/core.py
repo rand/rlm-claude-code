@@ -20,11 +20,33 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ..api_client import ClaudeClient, Provider, init_client
+from ..complexity_classifier import should_activate_rlm
+from ..config import RLMConfig, default_config
+from ..context_manager import externalize_context
+from ..cost_tracker import CostComponent, get_cost_tracker
+from ..epistemic import (
+    ClaimExtractor,
+    EvidenceAuditor,
+    HallucinationReport,
+    VerificationConfig,
+)
 from ..memory_store import MemoryStore
+from ..prompts import build_rlm_system_prompt
+from ..recursive_handler import RecursiveREPL
+from ..repl_environment import RLMEnvironment
+from ..response_parser import ResponseAction, ResponseParser
+from ..smart_router import SmartRouter
 from ..state_persistence import StatePersistence
+from ..trajectory import (
+    StreamingTrajectory,
+    TrajectoryEvent,
+    TrajectoryEventType,
+    TrajectoryRenderer,
+)
+from ..types import DeferredOperation, SessionContext
 
 # ============================================================================
 # Error Recovery (SPEC-12.10)
@@ -64,36 +86,6 @@ class Checkpoint:
     partial_results: list[str]
     repl_state: dict[str, Any]
 
-
-# ============================================================================
-# Core Imports
-# ============================================================================
-
-from ..complexity_classifier import should_activate_rlm
-from ..config import RLMConfig, default_config
-from ..context_manager import externalize_context
-from ..cost_tracker import CostComponent, get_cost_tracker
-from ..epistemic import (
-    ClaimExtractor,
-    EvidenceAuditor,
-    HallucinationReport,
-    VerificationConfig,
-)
-from ..prompts import build_rlm_system_prompt
-from ..recursive_handler import RecursiveREPL
-from ..repl_environment import RLMEnvironment
-from ..response_parser import ResponseAction, ResponseParser
-from ..smart_router import SmartRouter
-from ..trajectory import (
-    StreamingTrajectory,
-    TrajectoryEvent,
-    TrajectoryEventType,
-    TrajectoryRenderer,
-)
-from ..types import DeferredOperation, SessionContext
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -833,6 +825,7 @@ class RLMOrchestrator:
                                 "error": str(e),
                             }
                         await asyncio.sleep(retry_backoff_s * attempt)
+            raise RuntimeError(f"Unreachable: max_attempts={max_attempts}")
 
         # Execute all operations in parallel with bounded concurrency
         results = await asyncio.gather(*[execute_op_bounded(op) for op in all_ops])
