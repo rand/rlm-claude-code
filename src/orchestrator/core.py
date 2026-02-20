@@ -185,6 +185,59 @@ class RLMOrchestrator:
             return json.dumps(outputs, indent=2, default=str)
         return str(outputs)
 
+    @staticmethod
+    def _clamp_unit_score(value: float) -> float:
+        """Clamp a numeric score to [0.0, 1.0]."""
+        return max(0.0, min(1.0, value))
+
+    @classmethod
+    def _extract_relevance_score(cls, payload: Any) -> float:
+        """Extract a normalized relevance score from an LLM response payload."""
+        if isinstance(payload, bool):
+            return 1.0 if payload else 0.0
+        if isinstance(payload, (int, float)):
+            return cls._clamp_unit_score(float(payload))
+        if isinstance(payload, str):
+            stripped = payload.strip()
+            if not stripped:
+                return 0.0
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if parsed is not None:
+                return cls._extract_relevance_score(parsed)
+            match = re.search(r"-?\d+(?:\.\d+)?", stripped)
+            if match:
+                try:
+                    return cls._clamp_unit_score(float(match.group(0)))
+                except ValueError:
+                    return 0.0
+            return 0.0
+        if isinstance(payload, dict):
+            for key in ("score", "relevance", "relevance_score", "support_score", "value"):
+                if key in payload:
+                    return cls._extract_relevance_score(payload[key])
+            return 0.0
+        if isinstance(payload, list):
+            for item in payload:
+                score = cls._extract_relevance_score(item)
+                if score > 0:
+                    return score
+            return 0.0
+        return 0.0
+
+    @staticmethod
+    def _build_reduce_query(reduce_prompt: str, map_results: list[Any]) -> str:
+        """Construct a reduce query from map results and a reduce prompt."""
+        rendered_results = "\n".join(f"- {result}" for result in map_results)
+        if "{results}" in reduce_prompt:
+            try:
+                return reduce_prompt.format(results=rendered_results)
+            except Exception:
+                pass
+        return f"{reduce_prompt}\n\nMap results:\n{rendered_results}"
+
     async def run(
         self, query: str, context: SessionContext
     ) -> AsyncIterator[TrajectoryEvent | str]:
@@ -810,13 +863,68 @@ class RLMOrchestrator:
             ]
             repl.resolve_batch(batch.batch_id, batch_results)
 
+            # SPEC-01.04: Execute reduce phase for map_reduce batches.
+            reduce_prompt = batch.metadata.get("reduce_prompt")
+            if isinstance(reduce_prompt, str) and reduce_prompt.strip():
+                reduce_op = DeferredOperation(
+                    operation_id=f"{batch.batch_id}_reduce",
+                    operation_type="reduce",
+                    query=self._build_reduce_query(reduce_prompt, batch_results),
+                    context="\n".join(str(item) for item in batch_results),
+                    spawn_repl=False,
+                    metadata={"batch_id": batch.batch_id},
+                )
+                op_lookup[reduce_op.operation_id] = reduce_op
+                reduce_id, reduce_result, reduce_status = await execute_op_bounded(reduce_op)
+                result_map[reduce_id] = reduce_result
+                op_telemetry.append(
+                    {
+                        "operation_id": reduce_id,
+                        "operation_type": reduce_op.operation_type,
+                        **reduce_status,
+                    }
+                )
+                batch.metadata["reduce_result"] = reduce_result
+                batch.metadata["reduce_status"] = reduce_status["status"]
+                batch.metadata["reduce_attempts"] = reduce_status.get("attempts", 1)
+                repl.globals["working_memory"][f"{batch.batch_id}_reduced"] = reduce_result
+
+            # SPEC-01.10: Materialize reranked results from deferred LLM scoring.
+            if batch.metadata.get("batch_type") == "find_relevant_llm_scoring":
+                raw_top_k = batch.metadata.get("top_k", 5)
+                top_k = raw_top_k if isinstance(raw_top_k, int) else 5
+                candidates = batch.metadata.get("candidates", [])
+                reranked: list[tuple[str, float]] = []
+
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    op_id = candidate.get("operation_id")
+                    chunk = candidate.get("chunk")
+                    if not isinstance(op_id, str) or not isinstance(chunk, str):
+                        continue
+
+                    raw_keyword = candidate.get("keyword_score", 0.0)
+                    keyword_score = float(raw_keyword) if isinstance(raw_keyword, (int, float)) else 0.0
+                    llm_score = self._extract_relevance_score(result_map.get(op_id))
+                    combined = self._clamp_unit_score(0.7 * llm_score + 0.3 * keyword_score)
+                    reranked.append((chunk, round(combined, 6)))
+
+                reranked.sort(key=lambda item: item[1], reverse=True)
+                reranked_results = reranked[: max(0, top_k)]
+                batch.metadata["reranked_results"] = reranked_results
+                batch.metadata["llm_scoring_applied"] = True
+                repl.globals["working_memory"][f"{batch.batch_id}_reranked"] = reranked_results
+
         # Emit completion event with cost summary
         failed = sum(1 for op in op_telemetry if op["status"] == "error")
         succeeded = len(op_telemetry) - failed
         retried = sum(1 for op in op_telemetry if op.get("attempts", 1) > 1)
         metadata: dict[str, Any] = {
-            "total_operations": total_ops,
-            "completed": len(results),
+            "total_operations": len(op_telemetry),
+            "initial_operations": total_ops,
+            "completed": len(op_telemetry),
+            "completed_initial": len(results),
             "succeeded": succeeded,
             "failed": failed,
             "retried": retried,

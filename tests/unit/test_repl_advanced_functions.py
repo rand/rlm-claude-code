@@ -761,9 +761,19 @@ class TestFindRelevantLLMScoring:
             use_llm_scoring=True,
         )
 
-        # When LLM scoring is enabled and candidates > top_k * 2,
-        # it should return deferred operations or process differently
-        assert result is not None
+        # Returns synchronous keyword-ranked candidates immediately.
+        assert isinstance(result, list)
+        assert len(result) <= 3
+
+        # When candidates exceed threshold, LLM scoring is scheduled.
+        _, batches = basic_env.get_pending_operations()
+        assert any(
+            b.metadata.get("batch_type") == "find_relevant_llm_scoring" and len(b.operations) > 0
+            for b in batches
+        )
+        assert any(
+            any(op.operation_type == "relevance_score" for op in b.operations) for b in batches
+        )
 
 
 # =============================================================================

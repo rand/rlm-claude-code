@@ -1,15 +1,15 @@
 {
   "script": "scripts/rcc_contract_probe.py",
   "script_version": 1,
-  "generated_utc": "2026-02-20T16:56:16.752398+00:00",
+  "generated_utc": "2026-02-20T17:24:39.047032+00:00",
   "repo_root": "/Users/rand/src/rlm-claude-code",
   "python_version": "3.12.11",
   "platform": "macOS-26.3-arm64-arm-64bit",
   "loop_candidate_repo": "/Users/rand/src/loop",
-  "loop_candidate_sha": "4bb2f7371e02b5b9c904fb67dcd61eda15725e6a",
+  "loop_candidate_sha": "92046b61f52d78b4f2442ff7822d979569af3ad5",
   "vendor_loop_sha": "4bb2f7371e02b5b9c904fb67dcd61eda15725e6a",
   "all_passed": true,
-  "claim_scope": "claim-ready-for-candidate-tuple",
+  "claim_scope": "claim-ready-for-pinned-vendor-sha-only",
   "invariants": [
     {
       "invariant": "A1",
@@ -41,8 +41,8 @@
       "passed": true,
       "details": "Basic memory CRUD/search semantics are compatible.",
       "observed": {
-        "db_path": "/var/folders/vx/_xxfn0z95bv7qmfgb3nx6z700000gn/T/rcc-memory-probe-5ptcu3kh/memory.db",
-        "node_created": "5e853b5f-18bb-46c7-bf8f-3a13558d2ea7",
+        "db_path": "/var/folders/vx/_xxfn0z95bv7qmfgb3nx6z700000gn/T/rcc-memory-probe-nteuz7bw/memory.db",
+        "node_created": "72e1cb1d-7035-44ef-b655-d1fa7b92f60e",
         "search_hits": 1,
         "deleted": true,
         "stats_total_nodes": 0,

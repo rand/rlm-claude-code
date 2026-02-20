@@ -1348,7 +1348,9 @@ class RLMEnvironment:
         # Store reduce_prompt in batch metadata for later processing
         # The orchestrator will use this to create the reduce operation
         batch.metadata["reduce_prompt"] = reduce_prompt
+        batch.metadata["map_prompt"] = map_prompt
         batch.metadata["model"] = model
+        batch.metadata["batch_type"] = "map_reduce"
 
         self.pending_batches.append(batch)
         return batch
@@ -1421,11 +1423,57 @@ class RLMEnvironment:
 
         # Optional LLM scoring if candidates exceed threshold (SPEC-01.10)
         if use_llm_scoring and len(scored_chunks) > top_k * 2:
-            # Create deferred batch for LLM scoring
-            # For now, we just use keyword scoring
-            # LLM scoring would be implemented by creating a DeferredBatch
-            # and processing results in the orchestrator
-            pass
+            # Create deferred batch for optional async LLM scoring.
+            # Return remains synchronous (keyword ranking), while the orchestrator
+            # can later resolve and publish reranked results.
+            self._operation_counter += 1
+            batch_id = f"relevance_{self._operation_counter}"
+            batch = DeferredBatch(batch_id=batch_id)
+            candidate_limit = min(len(scored_chunks), max(top_k * 4, top_k + 1))
+            candidates = scored_chunks[:candidate_limit]
+            candidate_map: list[dict[str, Any]] = []
+
+            for chunk, keyword_score in candidates:
+                self._operation_counter += 1
+                op_id = f"relevance_{self._operation_counter}"
+                score_prompt = (
+                    "Score relevance from 0.0 to 1.0.\n"
+                    "Return only the numeric score.\n"
+                    f"QUERY:\n{query}\n"
+                    "CHUNK:\n"
+                    f"{chunk}"
+                )
+
+                op = DeferredOperation(
+                    operation_id=op_id,
+                    operation_type="relevance_score",
+                    query=score_prompt,
+                    context=chunk,
+                    spawn_repl=False,
+                    metadata={
+                        "keyword_score": keyword_score,
+                        "query": query,
+                    },
+                )
+                batch.operations.append(op)
+                candidate_map.append(
+                    {
+                        "operation_id": op_id,
+                        "chunk": chunk,
+                        "keyword_score": keyword_score,
+                    }
+                )
+
+            batch.metadata.update(
+                {
+                    "batch_type": "find_relevant_llm_scoring",
+                    "query": query,
+                    "top_k": top_k,
+                    "candidate_count": len(candidate_map),
+                    "candidates": candidate_map,
+                }
+            )
+            self.pending_batches.append(batch)
 
         # Return top_k results (SPEC-01.11)
         return scored_chunks[:top_k]

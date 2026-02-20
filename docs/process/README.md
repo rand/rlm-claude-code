@@ -21,6 +21,7 @@
 | Document | Description |
 |----------|-------------|
 | [Implementation](./implementation.md) | Implementation workflow and phases |
+| [Full-System Empirical Validation](./full-system-empirical-validation.md) | End-to-end validation matrix, evidence, and remaining gaps |
 | [Code Review](./code-review.md) | Code review checklist and standards |
 | [Testing](./testing.md) | Testing strategy and requirements |
 | [Debugging](./debugging.md) | Debugging workflow for RLM issues |

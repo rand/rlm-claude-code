@@ -268,6 +268,10 @@ class TestLocalOrchestrator:
     @pytest.mark.asyncio
     async def test_orchestrate_fallback_on_no_backend(self, orchestrator):
         """Falls back to heuristics when no backend available."""
+        # Force execution through the local-LLM stage so this test validates
+        # backend-failure fallback rather than earlier cascade decisions.
+        orchestrator.config.use_cascade = False
+
         # Mock _get_runner to raise
         orchestrator._get_runner = MagicMock(side_effect=RuntimeError("No backend"))
 

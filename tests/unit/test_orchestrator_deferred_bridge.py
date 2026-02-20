@@ -3,6 +3,7 @@ Unit tests for deferred-operation bridge behavior in orchestrator core.
 """
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -20,15 +21,22 @@ from src.types import Message, MessageRole, SessionContext
 class _StubClient:
     """Deterministic recursive-query stub with configurable transient failures."""
 
-    def __init__(self, transient_failures: dict[str, int] | None = None):
+    def __init__(
+        self,
+        transient_failures: dict[str, int] | None = None,
+        responder: Callable[[str, Any], Any] | None = None,
+    ):
         self.transient_failures = transient_failures or {}
         self.calls: dict[str, int] = {}
+        self._responder = responder
 
     async def recursive_query(self, query: str, context: Any) -> str:
         key = f"{query}|{context}"
         self.calls[key] = self.calls.get(key, 0) + 1
         if self.calls[key] <= self.transient_failures.get(key, 0):
             raise RuntimeError(f"transient-{self.calls[key]}")
+        if self._responder is not None:
+            return str(self._responder(query, context))
         return f"resolved:{query}:{context}"
 
 
@@ -142,6 +150,99 @@ async def test_deferred_bridge_surfaces_terminal_errors_with_telemetry(
     op_telemetry = end_metadata["operations"][0]
     assert op_telemetry["status"] == "error"
     assert op_telemetry["attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_deferred_bridge_executes_map_reduce_reduce_stage(
+    basic_context: SessionContext,
+) -> None:
+    orchestrator = RLMOrchestrator()
+    repl = RLMEnvironment(basic_context, use_restricted=False)
+
+    def responder(query: str, context: Any) -> str:
+        if query.startswith("Combine map summaries"):
+            return "final:combined-summary"
+        snippet = str(context).splitlines()[0] if context else "empty"
+        return f"map:{snippet}"
+
+    client = _StubClient(responder=responder)
+    trajectory = _TrajectoryRecorder()
+
+    batch = repl._map_reduce(
+        content="\n".join(f"line-{i}" for i in range(120)),
+        map_prompt="Summarize chunk",
+        reduce_prompt="Combine map summaries into one answer",
+        n_chunks=2,
+    )
+
+    events = [
+        event
+        async for event in orchestrator._process_deferred_operations(
+            repl, client, depth=0, trajectory=trajectory
+        )
+    ]
+
+    reduced_key = f"{batch.batch_id}_reduced"
+    assert reduced_key in repl.globals["working_memory"]
+    assert repl.globals["working_memory"][reduced_key] == "final:combined-summary"
+    assert batch.metadata["reduce_result"] == "final:combined-summary"
+    assert batch.metadata["reduce_status"] == "success"
+
+    end_metadata = events[-1].metadata or {}
+    assert any(op["operation_type"] == "reduce" for op in end_metadata["operations"])
+    assert end_metadata["total_operations"] == len(batch.operations) + 1
+
+
+@pytest.mark.asyncio
+async def test_deferred_bridge_reranks_find_relevant_llm_scores(
+    basic_context: SessionContext,
+) -> None:
+    orchestrator = RLMOrchestrator()
+    repl = RLMEnvironment(basic_context, use_restricted=False)
+
+    def responder(query: str, context: Any) -> str:
+        if "Score relevance from 0.0 to 1.0." in query:
+            return "0.98" if "needle" in str(context).lower() else "0.12"
+        return "0.0"
+
+    client = _StubClient(responder=responder)
+    trajectory = _TrajectoryRecorder()
+
+    content_lines = []
+    for i in range(260):
+        if 110 <= i <= 140:
+            content_lines.append(f"line {i}: needle auth vulnerability context")
+        else:
+            content_lines.append(f"line {i}: generic context")
+    content = "\n".join(content_lines)
+
+    _ = repl._find_relevant(
+        content=content,
+        query="context",
+        top_k=2,
+        use_llm_scoring=True,
+    )
+
+    _, batches = repl.get_pending_operations()
+    relevance_batch = next(
+        b for b in batches if b.metadata.get("batch_type") == "find_relevant_llm_scoring"
+    )
+
+    _ = [
+        event
+        async for event in orchestrator._process_deferred_operations(
+            repl, client, depth=0, trajectory=trajectory
+        )
+    ]
+
+    reranked = relevance_batch.metadata.get("reranked_results")
+    assert isinstance(reranked, list)
+    assert len(reranked) == 2
+    assert "needle" in reranked[0][0]
+    assert reranked[0][1] >= reranked[1][1]
+
+    reranked_key = f"{relevance_batch.batch_id}_reranked"
+    assert repl.globals["working_memory"][reranked_key] == reranked
 
 
 def test_submit_final_answer_prefers_answer_field() -> None:
