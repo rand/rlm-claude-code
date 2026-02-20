@@ -10,7 +10,7 @@
       "name": "rlm-claude-code",
       "source": "./",
       "description": "Recursive Language Model integration for Claude Code - Go binary hooks (~5ms startup), cross-plugin event coordination (DP/RLM), version-aware config migration, and intelligent multi-provider routing",
-      "version": "0.7.2"
+      "version": "0.7.3"
     }
   ]
 }

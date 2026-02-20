@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.7.3] - 2026-02-20
+
+### Added
+- Repository-level quality gate targets in `Makefile`:
+  - `make check`
+  - `make check-python`
+  - `make check-go`
+  - `make benchmark`
+  - `make benchmark-bounded`
+- Bounded benchmark execution mode for restricted environments:
+  - `tests/benchmarks/conftest.py` adds `bounded_benchmark` fixture
+  - controlled by `RLM_BENCHMARK_BOUNDED` and round/iteration env vars
+- Integration coverage for complexity-check binary contract path (`tests/integration/test_complexity_check_binary.py`)
+
+### Changed
+- Benchmark suites now use bounded-capable benchmark fixture in:
+  - `tests/benchmarks/test_phase3_benchmarks.py`
+  - `tests/benchmarks/test_verification_benchmarks.py`
+- Rich output now includes real spinner progress emission with throttling in `RLMConsole.emit_progress()` (SPEC-13.23, SPEC-13.25)
+- Auto-activation escalation now applies a conservative budget guard to keep execution in micro mode when budget is below balanced-entry threshold (SPEC-14.23)
+- Expanded explicit trace tagging and coverage for prioritized non-deferred gaps in SPEC-13/14/16/17
+
+### Fixed
+- Memory store compatibility with `rlm_core` builds that do not expose `MemoryStore.update_fields()`:
+  - field updates now use a validated SQLite compatibility path when needed
+  - node reads/queries/search in compatibility mode now use SQLite directly for consistent cross-session behavior
+  - compatibility updates checkpoint WAL and use thread-safe connection handling for parallel session flows
+
+### Verified
+- Full quality gate pass:
+  - `make check` (`3281 passed, 3 deselected`)
+  - `make benchmark-bounded` (`37 passed`)
+  - `uv run dp enforce pre-commit --policy dp-policy.json --json` (`ok=true`)
+  - `uv run dp review --json` (`ok=true`)
+  - `uv run dp verify --json` (`ok=true`)
+  - `uv run dp enforce pre-push --policy dp-policy.json --json` (`ok=true`)
+
 ## [0.7.2] - 2026-02-19
 
 ### Fixed

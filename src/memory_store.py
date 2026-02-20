@@ -8,8 +8,10 @@ Uses rlm_core.MemoryStore as the primary storage backend.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -201,6 +203,7 @@ class MemoryStore:
 
         self.db_path = db_path
         self._is_memory = db_path == ":memory:"
+        self._owner_thread_id = threading.get_ident()
         self._persistent_conn: sqlite3.Connection | None = None
 
         # Python SQLite for auxiliary tables (hyperedges, confidence_updates)
@@ -216,6 +219,7 @@ class MemoryStore:
             self._core_store = rlm_core.MemoryStore.in_memory()
         else:
             self._core_store = rlm_core.MemoryStore.open(db_path)
+        self._core_supports_update_fields = hasattr(self._core_store, "update_fields")
 
     @property
     def uses_rlm_core(self) -> bool:
@@ -388,9 +392,15 @@ class MemoryStore:
         Returns a non-closeable wrapper around a persistent connection
         to avoid opening multiple connections that corrupt rlm_core's WAL state.
         """
-        if self._persistent_conn is not None:
+        if (
+            self._persistent_conn is not None
+            and threading.get_ident() == self._owner_thread_id
+        ):
             self._persistent_conn.row_factory = sqlite3.Row
             return _NoCloseConnection(self._persistent_conn)
+
+        # Use thread-local connections for non-owner threads to avoid sqlite
+        # thread-affinity errors when tests exercise concurrent session access.
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
@@ -435,12 +445,50 @@ class MemoryStore:
         """Convert RFC3339 timestamp string to epoch milliseconds."""
         from datetime import datetime
 
+        if isinstance(rfc3339_str, int | float):
+            return int(rfc3339_str)
         try:
             # Handle various RFC3339 formats
             dt = datetime.fromisoformat(rfc3339_str.replace("Z", "+00:00"))
             return int(dt.timestamp() * 1000)
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, TypeError):
             return 0
+
+    @staticmethod
+    def _map_db_tier_to_str(tier_value: Any) -> str:
+        """Map integer/string DB tier representation to Python tier string."""
+        if isinstance(tier_value, int):
+            mapping = {0: "task", 1: "session", 2: "longterm", 3: "archive"}
+            return mapping.get(tier_value, "task")
+        tier_name = str(tier_value).split(".")[-1].lower()
+        return tier_name if tier_name in {"task", "session", "longterm", "archive"} else "task"
+
+    def _db_row_to_python_node(self, row: sqlite3.Row) -> Node:
+        """Convert sqlite row from nodes table to Python Node dataclass."""
+        raw_metadata = row["metadata"]
+        metadata: dict[str, Any] = {}
+        if raw_metadata:
+            try:
+                metadata = json.loads(raw_metadata)
+            except (TypeError, ValueError):
+                metadata = {}
+        provenance = metadata.pop("_provenance", None) or row["provenance_ref"]
+        confidence = row["confidence"] if row["confidence"] is not None else 0.5
+        return Node(
+            id=row["id"],
+            type=row["node_type"] if row["node_type"] in self.VALID_NODE_TYPES else "fact",
+            content=row["content"],
+            tier=self._map_db_tier_to_str(row["tier"]),
+            confidence=confidence,
+            subtype=row["subtype"],
+            embedding=row["embedding"],
+            provenance=provenance,
+            metadata=metadata,
+            created_at=self._rfc3339_to_epoch_ms(row["created_at"]),
+            updated_at=self._rfc3339_to_epoch_ms(row["updated_at"]),
+            last_accessed=self._rfc3339_to_epoch_ms(row["last_accessed"]),
+            access_count=row["access_count"] if row["access_count"] is not None else 0,
+        )
 
     def _core_node_to_python(self, node: Any) -> Node:
         """Convert rlm_core.Node to Python Node dataclass."""
@@ -503,6 +551,16 @@ class MemoryStore:
 
     def _get_node_core(self, node_id: str) -> Node | None:
         """Get a node using rlm_core backend."""
+        if not self._core_supports_update_fields:
+            conn = self._get_connection()
+            try:
+                row = conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
+            finally:
+                conn.close()
+            if row is None:
+                return None
+            return self._db_row_to_python_node(row)
+
         try:
             result = self._core_store.get_node(node_id)
         except (ValueError, RuntimeError):
@@ -526,6 +584,29 @@ class MemoryStore:
         limit: int = 100,
     ) -> list[Node]:
         """Query nodes using rlm_core backend."""
+        if not self._core_supports_update_fields:
+            where_clauses: list[str] = []
+            params: list[Any] = []
+            if node_type is not None:
+                where_clauses.append("node_type = ?")
+                params.append(node_type)
+            if tier is not None:
+                where_clauses.append("tier = ?")
+                params.append(self._core_tier_to_db_value(tier))
+            where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            query = (
+                "SELECT * FROM nodes "
+                f"{where_sql} "
+                "ORDER BY updated_at DESC "
+                "LIMIT ?"
+            )
+            params.append(limit)
+            conn = self._get_connection()
+            try:
+                rows = conn.execute(query, params).fetchall()
+            finally:
+                conn.close()
+            return [self._db_row_to_python_node(row) for row in rows]
 
         if node_type is not None:
             results = self._core_store.query_by_type(self._map_node_type_to_core(node_type), limit)
@@ -550,6 +631,37 @@ class MemoryStore:
 
     def _search_core(self, query: str, limit: int) -> list[SearchResult]:
         """Search using rlm_core backend."""
+        if not self._core_supports_update_fields:
+            sql = """
+                SELECT
+                    n.id AS node_id,
+                    n.content AS content,
+                    n.node_type AS node_type,
+                    n.confidence AS confidence,
+                    snippet(nodes_fts, 0, '', '', '...', 10) AS snippet
+                FROM nodes_fts
+                JOIN nodes AS n ON n.rowid = nodes_fts.rowid
+                WHERE nodes_fts MATCH ?
+                ORDER BY bm25(nodes_fts)
+                LIMIT ?
+            """
+            conn = self._get_connection()
+            try:
+                rows = conn.execute(sql, (query, limit)).fetchall()
+            finally:
+                conn.close()
+            return [
+                SearchResult(
+                    node_id=row["node_id"],
+                    content=row["content"],
+                    node_type=row["node_type"],
+                    bm25_score=row["confidence"] if row["confidence"] is not None else 0.5,
+                    snippet=row["snippet"]
+                    if row["snippet"] is not None
+                    else (row["content"][:100] if len(row["content"]) > 100 else row["content"]),
+                )
+                for row in rows
+            ]
 
         results = self._core_store.search_content(query, limit)
         return [
@@ -562,6 +674,104 @@ class MemoryStore:
             )
             for node in results
         ]
+
+    @staticmethod
+    def _now_rfc3339() -> str:
+        """Return current timestamp in RFC3339 format."""
+        from datetime import datetime
+
+        return datetime.now(UTC).isoformat(timespec="microseconds")
+
+    @staticmethod
+    def _core_tier_to_db_value(tier: Any) -> int:
+        """Map rlm_core tier enum/string/int to integer DB representation."""
+        if isinstance(tier, int):
+            if 0 <= tier <= 3:
+                return tier
+            raise ValueError(f"Invalid tier value: {tier}")
+        tier_name = str(tier).split(".")[-1].lower()
+        mapping = {
+            "task": 0,
+            "session": 1,
+            "longterm": 2,
+            "archive": 3,
+        }
+        if tier_name not in mapping:
+            raise ValueError(f"Invalid tier value: {tier}")
+        return mapping[tier_name]
+
+    def _update_core_fields_via_sql(self, node_id: str, **fields: Any) -> bool:
+        """
+        Update node fields directly in SQLite for older rlm_core builds.
+
+        This preserves full update behavior when rlm_core does not expose
+        MemoryStore.update_fields (e.g., rlm_core 0.1.x).
+        """
+        conn = self._get_connection()
+        try:
+            exists = conn.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone()
+            if exists is None:
+                return False
+
+            assignments: list[str] = []
+            params: list[Any] = []
+
+            if "content" in fields:
+                assignments.append("content = ?")
+                params.append(fields["content"])
+            if "confidence" in fields:
+                assignments.append("confidence = ?")
+                params.append(fields["confidence"])
+            if "tier" in fields:
+                assignments.append("tier = ?")
+                params.append(self._core_tier_to_db_value(fields["tier"]))
+            if "subtype" in fields:
+                assignments.append("subtype = ?")
+                params.append(fields["subtype"])
+            if "metadata" in fields:
+                metadata = fields["metadata"] if fields["metadata"] is not None else {}
+                assignments.append("metadata = ?")
+                params.append(json.dumps(metadata, separators=(",", ":")))
+            if "provenance_source" in fields:
+                assignments.append("provenance_source = ?")
+                params.append(fields["provenance_source"])
+            if "provenance_ref" in fields:
+                assignments.append("provenance_ref = ?")
+                params.append(fields["provenance_ref"])
+            if "last_accessed" in fields:
+                assignments.append("last_accessed = ?")
+                params.append(fields["last_accessed"])
+            if "access_count" in fields:
+                assignments.append("access_count = ?")
+                params.append(fields["access_count"])
+
+            if not assignments:
+                return True
+
+            assignments.append("updated_at = ?")
+            params.append(self._now_rfc3339())
+            params.append(node_id)
+
+            conn.execute(f"UPDATE nodes SET {', '.join(assignments)} WHERE id = ?", params)
+            conn.commit()
+            # Ensure sequential store instances see updates even if their
+            # SQLite reader configuration does not consume WAL directly.
+            try:
+                conn.execute("PRAGMA wal_checkpoint(FULL)")
+            except sqlite3.OperationalError:
+                pass
+            return True
+        finally:
+            conn.close()
+
+    def _update_core_fields(self, node_id: str, **fields: Any) -> bool:
+        """Update node fields via rlm_core API or SQL compatibility fallback."""
+        if not fields:
+            return True
+        if self._core_supports_update_fields:
+            self._core_store.update_fields(node_id, **fields)
+            return True
+        return self._update_core_fields_via_sql(node_id, **fields)
 
     # =========================================================================
     # Node CRUD Operations (SPEC-02.20-24)
@@ -673,7 +883,7 @@ class MemoryStore:
             return None
         # Track access (best-effort, don't fail reads)
         try:
-            self._core_store.update_fields(
+            self._update_core_fields(
                 node_id,
                 access_count=node.access_count + 1,
             )
@@ -730,7 +940,7 @@ class MemoryStore:
         if "metadata" in kwargs:
             update_kwargs["metadata"] = kwargs["metadata"]
 
-        self._core_store.update_fields(node_id, **update_kwargs)
+        self._update_core_fields(node_id, **update_kwargs)
 
         # Log tier transition if tier changed (SPEC-02.19)
         if "tier" in kwargs and kwargs["tier"] != old_tier:
@@ -1900,7 +2110,7 @@ class MemoryStore:
             rfc3339 = timestamp.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         else:
             rfc3339 = str(timestamp)
-        return self._core_store.update_fields(node_id, last_accessed=rfc3339)
+        return self._update_core_fields(node_id, last_accessed=rfc3339)
 
     def get_nodes_by_metadata(
         self,
