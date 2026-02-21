@@ -58,7 +58,7 @@ uv run pytest tests/ -v
 
 ```bash
 # Add the marketplace (one-time setup)
-claude plugin marketplace add github:rand/rlm-claude-code
+claude plugin marketplace add [github:rand/rlm-claude-code](https://github.com/rand/rlm-claude-code)
 
 # Install the plugin
 claude plugin install rlm-claude-code@rlm-claude-code
